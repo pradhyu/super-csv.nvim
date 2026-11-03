@@ -13,6 +13,8 @@ M.defaults = {
   show_footer_stats = true,  -- Show Excel-style COUNT / SUM / AVG / MIN / MAX bar at bottom
   heatmap = false,           -- Conditional numeric heatmap coloring (toggle with gm)
   sqlite_backend = true,     -- Back CSV with SQLite + LuaJIT FFI for 1M-row speed
+  batch_size = 500,          -- Number of rows loaded per batch when scrolling
+  lazy_sqlite = true,        -- Don't index huge files upfront; load in batches and index on demand
   cache_dir = string.format("/tmp/super-csv-%d", vim.uv.getuid and vim.uv.getuid() or 1000),
 }
 
