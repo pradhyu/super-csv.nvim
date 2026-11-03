@@ -139,6 +139,7 @@ function M.render(session)
   if not session or not session.view_buf or not vim.api.nvim_buf_is_valid(session.view_buf) then
     return
   end
+  config = require("super-csv.config")
   local win = session.view_win
   if not win or not vim.api.nvim_win_is_valid(win) then
     win = vim.fn.bufwinid(session.view_buf)

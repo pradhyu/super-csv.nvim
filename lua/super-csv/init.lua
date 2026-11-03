@@ -441,21 +441,27 @@ local function attach_keymaps(session)
   end, "Restore All Hidden Columns")
 
   map("gm", function()
-    config.options.heatmap = not config.options.heatmap
-    viewport.render(session)
-    vim.notify("[SuperCsv] Numeric Heatmap: " .. (config.options.heatmap and "ON" or "OFF"))
+    local cfg = require("super-csv.config")
+    cfg.options.heatmap = not cfg.options.heatmap
+    cfg.save_persisted()
+    require("super-csv.ui.viewport").render(session)
+    vim.notify("[SuperCsv] Numeric Heatmap: " .. (cfg.options.heatmap and "ON" or "OFF"))
   end, "Toggle Numeric Heatmap")
 
   map("gr", function()
-    config.options.zebra_rows = not config.options.zebra_rows
-    viewport.render(session)
-    vim.notify("[SuperCsv] Alternating Row Colors (Zebra Rows): " .. (config.options.zebra_rows and "ON" or "OFF"))
+    local cfg = require("super-csv.config")
+    cfg.options.zebra_rows = not cfg.options.zebra_rows
+    cfg.save_persisted()
+    require("super-csv.ui.viewport").render(session)
+    vim.notify("[SuperCsv] Alternating Row Colors (Zebra Rows): " .. (cfg.options.zebra_rows and "ON (saved)" or "OFF (saved)"))
   end, "Toggle Alternating Row Colors")
 
   map("gz", function()
-    config.options.zebra_columns = not config.options.zebra_columns
-    viewport.render(session)
-    vim.notify("[SuperCsv] Alternating Column Colors (Zebra Cols): " .. (config.options.zebra_columns and "ON" or "OFF"))
+    local cfg = require("super-csv.config")
+    cfg.options.zebra_columns = not cfg.options.zebra_columns
+    cfg.save_persisted()
+    require("super-csv.ui.viewport").render(session)
+    vim.notify("[SuperCsv] Alternating Column Colors (Zebra Cols): " .. (cfg.options.zebra_columns and "ON (saved)" or "OFF (saved)"))
   end, "Toggle Alternating Column Colors")
 
   map("<leader>cv", function()
@@ -904,15 +910,18 @@ function M.command(args)
     viewport.render(session)
   elseif sub == "heatmap" then
     config.options.heatmap = not config.options.heatmap
+    config.save_persisted()
     viewport.render(session)
   elseif sub == "zebra_rows" or sub == "zebra" then
     config.options.zebra_rows = not config.options.zebra_rows
+    config.save_persisted()
     viewport.render(session)
-    vim.notify("[SuperCsv] Alternating Row Colors: " .. (config.options.zebra_rows and "ON" or "OFF"))
+    vim.notify("[SuperCsv] Alternating Row Colors: " .. (config.options.zebra_rows and "ON (saved)" or "OFF (saved)"))
   elseif sub == "zebra_cols" then
     config.options.zebra_columns = not config.options.zebra_columns
+    config.save_persisted()
     viewport.render(session)
-    vim.notify("[SuperCsv] Alternating Column Colors: " .. (config.options.zebra_columns and "ON" or "OFF"))
+    vim.notify("[SuperCsv] Alternating Column Colors: " .. (config.options.zebra_columns and "ON (saved)" or "OFF (saved)"))
   elseif sub == "save" then
     sqlite.save_to_csv(session, session.filepath, false)
     viewport.render(session)
