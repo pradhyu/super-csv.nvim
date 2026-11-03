@@ -154,6 +154,14 @@ function M.render(session)
   local body_height = math.max(3, usable_height - 5 - footer_lines)
   session.page_size = body_height
 
+  -- If streaming batches directly from file (before SQLite is indexed), load the next batch as the user scrolls near the edge
+  if not session.sqlite_ready and not session.eof_reached then
+    local needed_row = math.max(session.cur_row or 1, (session.top_row or 1) + body_height) + 40
+    if needed_row > #(session.preview_rows or {}) then
+      parser.ensure_rows_loaded(session, needed_row)
+    end
+  end
+
   -- Clamp cur_row & top_row
   local total_before = session.filtered_rows or session.total_rows or #session.preview_rows
   if total_before > 0 then
@@ -168,7 +176,7 @@ function M.render(session)
   end
   session.top_row = math.max(1, session.top_row or 1)
 
-  -- Fetch visible rows from SQLite (or Stage 1 slice)
+  -- Fetch visible rows from Batch Cache / SQLite (or streamed file batches)
   local rows, total_filtered = sqlite.fetch_viewport_rows(session, session.top_row - 1, body_height)
   session.visible_rows = rows
   session.filtered_rows = total_filtered
@@ -218,10 +226,23 @@ function M.render(session)
     end
   end
 
-  local engine_badge = session.sqlite_ready and "󰆼 SQLite Ready" or (session.sqlite_indexing and "󱥸 Indexing..." or "⚡ Slice Preview")
+  local engine_badge
+  if session.sqlite_ready then
+    local bc = session.batch_cache
+    if bc then
+      engine_badge = string.format("󰆼 Batch [%s..%s]", fmt_num(bc.start_row), fmt_num(bc.end_row))
+    else
+      engine_badge = "󰆼 SQLite Batch"
+    end
+  elseif session.sqlite_indexing then
+    engine_badge = "󱥸 Indexing..."
+  else
+    engine_badge = session.eof_reached and "⚡ Memory Batch" or string.format("⚡ Batch Stream (%s loaded)", fmt_num(#(session.preview_rows or {})))
+  end
+  local total_suffix = (not session.sqlite_ready and not session.eof_reached) and "+" or ""
   local row_summary = (active_filters > 0 or (session.grep_pattern and session.grep_pattern ~= ""))
-    and string.format("Rows: %s / %s (Filtered)", fmt_num(total_filtered), fmt_num(session.total_rows or total_filtered))
-    or string.format("Row %s / %s", fmt_num(session.cur_row), fmt_num(total_filtered))
+    and string.format("Rows: %s / %s%s (Filtered)", fmt_num(total_filtered), fmt_num(session.total_rows or total_filtered), total_suffix)
+    or string.format("Row %s / %s%s", fmt_num(session.cur_row), fmt_num(total_filtered), total_suffix)
   local col_summary = string.format("Col %s #%d / %d", parser.col_to_excel(session.cur_col), session.cur_col, session.num_cols)
   local filter_str = (#filter_tags > 0) and (" │ 󰈲 " .. table.concat(filter_tags, ", ")) or ""
   local grep_str = (session.grep_pattern and session.grep_pattern ~= "") and (" │  /" .. session.grep_pattern .. "/") or ""
@@ -331,13 +352,13 @@ function M.render(session)
   table.insert(lines, mid_border)
   add_hl(#lines - 1, 0, #mid_border, "SuperCsvBorderPinned")
 
-  -- Precompute column min/max if heatmap is active
+  -- Precompute column min/max from current batch if heatmap is active (instant < 0.1ms)
   local col_minmax = {}
   if config.options.heatmap then
     for _, vc in ipairs(vis_cols) do
       local c = vc.col
       if session.types[c] == "i64" or session.types[c] == "f64" then
-        local st = sqlite.get_column_stats(session, c)
+        local st = sqlite.get_fast_column_stats(session, c)
         if st and type(st.min) == "number" and type(st.max) == "number" and st.max > st.min then
           col_minmax[c] = { min = st.min, max = st.max }
         end
@@ -453,9 +474,9 @@ function M.render(session)
   table.insert(lines, bot_border)
   add_hl(#lines - 1, 0, #bot_border, "SuperCsvBorderPinned")
 
-  -- 4. Excel Bottom Summary Bar (COUNT, DISTINCT, NULLS, SUM, AVG, MIN, MAX)
+  -- 4. Excel Bottom Summary Bar (COUNT, DISTINCT, NULLS, SUM, AVG, MIN, MAX over current batch)
   if config.options.show_footer_stats then
-    local st = sqlite.get_column_stats(session, session.cur_col)
+    local st = sqlite.get_fast_column_stats(session, session.cur_col)
     local cname = session.headers[session.cur_col] or ("col_" .. session.cur_col)
     local col_letter = parser.col_to_excel(session.cur_col)
     local stats_line

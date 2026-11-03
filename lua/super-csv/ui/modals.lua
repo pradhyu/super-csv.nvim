@@ -155,6 +155,7 @@ function M.open_autofilter(session, col_idx)
   vim.keymap.set("n", "c", function()
     session.filters[col_idx] = nil
     session.cached_where_sig = nil
+    session.batch_cache = nil
     session.cur_row = 1
     session.top_row = 1
     close_modal()
@@ -183,6 +184,7 @@ function M.open_autofilter(session, col_idx)
       }
     end
     session.cached_where_sig = nil
+    session.batch_cache = nil
     session.cur_row = 1
     session.top_row = 1
     close_modal()
@@ -247,6 +249,7 @@ function M.open_value_counts(session, col_idx)
       local val = freq_list[idx].value
       session.filters[col_idx] = { values = { [val] = true } }
       session.cached_where_sig = nil
+      session.batch_cache = nil
       session.cur_row = 1
       session.top_row = 1
       close_modal()

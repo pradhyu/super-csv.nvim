@@ -77,83 +77,80 @@ local function attach_keymaps(session)
     viewport.render(session)
   end, "Last Column")
 
-  -- 2. Vertical Row Navigation (across 1,000,000+ rows)
-  map("j", function()
-    local count = vim.v.count1
+  -- Helper to advance rows and stream next file batch on demand if not yet in SQLite
+  local function scroll_rows(delta_cur, delta_top)
+    local target_cur = (session.cur_row or 1) + (delta_cur or 0)
+    local target_top = (session.top_row or 1) + (delta_top or 0)
+    if not session.sqlite_ready and not session.eof_reached then
+      local needed = math.max(target_cur, target_top + (session.page_size or 30)) + 40
+      if needed > #(session.preview_rows or {}) then
+        parser.ensure_rows_loaded(session, needed)
+      end
+    end
     local max_r = session.filtered_rows or session.total_rows or 1
-    session.cur_row = math.min(max_r, session.cur_row + count)
+    if delta_cur then
+      session.cur_row = math.max(1, math.min(max_r, target_cur))
+    end
+    if delta_top then
+      session.top_row = math.max(1, math.min(math.max(1, max_r - (session.page_size or 30) + 1), target_top))
+    end
     viewport.render(session)
+  end
+
+  -- 2. Vertical Row Navigation (across 1,000,000+ rows in batches)
+  map("j", function()
+    scroll_rows(vim.v.count1, nil)
   end, "Next Row")
 
   map("<Down>", function()
-    local max_r = session.filtered_rows or session.total_rows or 1
-    session.cur_row = math.min(max_r, session.cur_row + vim.v.count1)
-    viewport.render(session)
+    scroll_rows(vim.v.count1, nil)
   end, "Next Row")
 
   map("k", function()
-    session.cur_row = math.max(1, session.cur_row - vim.v.count1)
-    viewport.render(session)
+    scroll_rows(-vim.v.count1, nil)
   end, "Previous Row")
 
   map("<Up>", function()
-    session.cur_row = math.max(1, session.cur_row - vim.v.count1)
-    viewport.render(session)
+    scroll_rows(-vim.v.count1, nil)
   end, "Previous Row")
 
   map("<C-d>", function()
     local half = math.max(5, math.floor((session.page_size or 30) / 2))
-    local max_r = session.filtered_rows or session.total_rows or 1
-    session.cur_row = math.min(max_r, session.cur_row + half)
-    session.top_row = math.min(math.max(1, max_r - (session.page_size or 30) + 1), session.top_row + half)
-    viewport.render(session)
+    scroll_rows(half, half)
   end, "Half-Page Down")
 
   map("<C-u>", function()
     local half = math.max(5, math.floor((session.page_size or 30) / 2))
-    session.cur_row = math.max(1, session.cur_row - half)
-    session.top_row = math.max(1, session.top_row - half)
-    viewport.render(session)
+    scroll_rows(-half, -half)
   end, "Half-Page Up")
 
   map("<PageDown>", function()
     local pg = session.page_size or 30
-    local max_r = session.filtered_rows or session.total_rows or 1
-    session.cur_row = math.min(max_r, session.cur_row + pg)
-    session.top_row = math.min(math.max(1, max_r - pg + 1), session.top_row + pg)
-    viewport.render(session)
+    scroll_rows(pg, pg)
   end, "Page Down")
 
   map("<PageUp>", function()
     local pg = session.page_size or 30
-    session.cur_row = math.max(1, session.cur_row - pg)
-    session.top_row = math.max(1, session.top_row - pg)
-    viewport.render(session)
+    scroll_rows(-pg, -pg)
   end, "Page Up")
 
   map("<C-f>", function()
     local pg = session.page_size or 30
-    local max_r = session.filtered_rows or session.total_rows or 1
-    session.cur_row = math.min(max_r, session.cur_row + pg)
-    session.top_row = math.min(math.max(1, max_r - pg + 1), session.top_row + pg)
-    viewport.render(session)
+    scroll_rows(pg, pg)
   end, "Page Down (<C-f>)")
 
   map("<C-b>", function()
     local pg = session.page_size or 30
-    session.cur_row = math.max(1, session.cur_row - pg)
-    session.top_row = math.max(1, session.top_row - pg)
-    viewport.render(session)
+    scroll_rows(-pg, -pg)
   end, "Page Up (<C-b>)")
 
   map("<C-e>", function()
-    local max_r = session.filtered_rows or session.total_rows or 1
     local step = vim.v.count1
-    session.top_row = math.min(math.max(1, max_r - (session.page_size or 30) + 1), session.top_row + step)
+    scroll_rows(nil, step)
     if session.cur_row < session.top_row then
       session.cur_row = session.top_row
+      viewport.render(session)
     end
-    viewport.render(session)
   end, "Scroll Viewport Down (<C-e>)")
 
   map("<C-y>", function()
@@ -168,6 +165,9 @@ local function attach_keymaps(session)
 
   map("gg", function()
     local target = (vim.v.count > 0) and vim.v.count or 1
+    if not session.sqlite_ready and not session.eof_reached and target > #(session.preview_rows or {}) then
+      parser.ensure_rows_loaded(session, target + 40)
+    end
     local max_r = session.filtered_rows or session.total_rows or 1
     session.cur_row = math.max(1, math.min(max_r, target))
     session.top_row = session.cur_row
@@ -175,21 +175,37 @@ local function attach_keymaps(session)
   end, "First Row (or [count]gg)")
 
   map("G", function()
-    local max_r = session.filtered_rows or session.total_rows or 1
     if vim.v.count > 0 then
-      session.cur_row = math.max(1, math.min(max_r, vim.v.count))
+      local target = vim.v.count
+      if not session.sqlite_ready and not session.eof_reached and target > #(session.preview_rows or {}) then
+        parser.ensure_rows_loaded(session, target + 40)
+      end
+      local max_r = session.filtered_rows or session.total_rows or 1
+      session.cur_row = math.max(1, math.min(max_r, target))
+      viewport.render(session)
+    elseif not session.sqlite_ready and not session.eof_reached and config.options.sqlite_backend then
+      sqlite.ensure_indexed(session, function()
+        local max_r = session.filtered_rows or session.total_rows or 1
+        session.cur_row = max_r
+        viewport.render(session)
+      end)
     else
+      local max_r = session.filtered_rows or session.total_rows or 1
       session.cur_row = max_r
+      viewport.render(session)
     end
-    viewport.render(session)
   end, "Last Row (or [count]G)")
 
   map("gG", function()
     vim.ui.input({ prompt = string.format("Go to Row (1 .. %d): ", session.filtered_rows or session.total_rows or 1) }, function(inp)
       local n = tonumber(inp)
       if n then
+        local target = math.floor(n)
+        if not session.sqlite_ready and not session.eof_reached and target > #(session.preview_rows or {}) then
+          parser.ensure_rows_loaded(session, target + 40)
+        end
         local max_r = session.filtered_rows or session.total_rows or 1
-        session.cur_row = math.max(1, math.min(max_r, math.floor(n)))
+        session.cur_row = math.max(1, math.min(max_r, target))
         session.top_row = math.max(1, session.cur_row - 5)
         viewport.render(session)
       end
@@ -198,16 +214,11 @@ local function attach_keymaps(session)
 
   -- Mouse scroll support
   map("<ScrollWheelDown>", function()
-    local max_r = session.filtered_rows or session.total_rows or 1
-    session.cur_row = math.min(max_r, session.cur_row + 3)
-    session.top_row = math.min(math.max(1, max_r - (session.page_size or 30) + 1), session.top_row + 3)
-    viewport.render(session)
+    scroll_rows(3, 3)
   end, "Scroll Down")
 
   map("<ScrollWheelUp>", function()
-    session.cur_row = math.max(1, session.cur_row - 3)
-    session.top_row = math.max(1, session.top_row - 3)
-    viewport.render(session)
+    scroll_rows(-3, -3)
   end, "Scroll Up")
 
   map("<ScrollWheelRight>", function()
@@ -286,19 +297,24 @@ local function attach_keymaps(session)
 
   -- 3. Excel AutoFilter, Quick Value Filter, Grep, Sort
   map("f", function()
-    modals.open_autofilter(session, session.cur_col)
+    sqlite.ensure_indexed(session, function()
+      modals.open_autofilter(session, session.cur_col)
+    end)
   end, "Open Excel AutoFilter for Current Column")
 
   map("fv", function()
     local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
     if row_obj then
       local val = row_obj.cells[session.cur_col] or ""
-      session.filters[session.cur_col] = { values = { [val] = true } }
-      session.cached_where_sig = nil
-      session.cur_row = 1
-      session.top_row = 1
-      viewport.render(session)
-      vim.notify(string.format("[SuperCsv] Filtered %s == %s", session.headers[session.cur_col], vim.inspect(val)))
+      sqlite.ensure_indexed(session, function()
+        session.filters[session.cur_col] = { values = { [val] = true } }
+        session.cached_where_sig = nil
+        session.batch_cache = nil
+        session.cur_row = 1
+        session.top_row = 1
+        viewport.render(session)
+        vim.notify(string.format("[SuperCsv] Filtered %s == %s", session.headers[session.cur_col], vim.inspect(val)))
+      end)
     end
   end, "Filter Column == Active Cell Value")
 
@@ -306,12 +322,15 @@ local function attach_keymaps(session)
     local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
     if row_obj then
       local val = row_obj.cells[session.cur_col] or ""
-      session.filters[session.cur_col] = { op = "!=", val = val }
-      session.cached_where_sig = nil
-      session.cur_row = 1
-      session.top_row = 1
-      viewport.render(session)
-      vim.notify(string.format("[SuperCsv] Excluded %s != %s", session.headers[session.cur_col], vim.inspect(val)))
+      sqlite.ensure_indexed(session, function()
+        session.filters[session.cur_col] = { op = "!=", val = val }
+        session.cached_where_sig = nil
+        session.batch_cache = nil
+        session.cur_row = 1
+        session.top_row = 1
+        viewport.render(session)
+        vim.notify(string.format("[SuperCsv] Excluded %s != %s", session.headers[session.cur_col], vim.inspect(val)))
+      end)
     end
   end, "Exclude Active Cell Value")
 
@@ -319,6 +338,7 @@ local function attach_keymaps(session)
     if session.filters[session.cur_col] then
       session.filters[session.cur_col] = nil
       session.cached_where_sig = nil
+      session.batch_cache = nil
       session.cur_row = 1
       session.top_row = 1
       viewport.render(session)
@@ -327,6 +347,7 @@ local function attach_keymaps(session)
       session.filters = {}
       session.grep_pattern = nil
       session.cached_where_sig = nil
+      session.batch_cache = nil
       session.cur_row = 1
       session.top_row = 1
       viewport.render(session)
@@ -338,6 +359,7 @@ local function attach_keymaps(session)
     session.filters = {}
     session.grep_pattern = nil
     session.cached_where_sig = nil
+    session.batch_cache = nil
     session.cur_row = 1
     session.top_row = 1
     viewport.render(session)
@@ -350,11 +372,20 @@ local function attach_keymaps(session)
       default = session.grep_pattern or "",
     }, function(inp)
       if inp ~= nil then
-        session.grep_pattern = vim.trim(inp)
-        session.cached_where_sig = nil
-        session.cur_row = 1
-        session.top_row = 1
-        viewport.render(session)
+        local pat = vim.trim(inp)
+        local function apply_grep()
+          session.grep_pattern = pat
+          session.cached_where_sig = nil
+          session.batch_cache = nil
+          session.cur_row = 1
+          session.top_row = 1
+          viewport.render(session)
+        end
+        if pat ~= "" then
+          sqlite.ensure_indexed(session, apply_grep)
+        else
+          apply_grep()
+        end
       end
     end)
   end, "Grep Rows Across All Columns")
@@ -365,32 +396,45 @@ local function attach_keymaps(session)
       prompt = string.format("Filter column '%s' (e.g. > 500, = US, contains prod): ", cname),
     }, function(inp)
       if inp and vim.trim(inp) ~= "" then
-        M.apply_filter_expr(session, session.cur_col, vim.trim(inp))
+        local expr = vim.trim(inp)
+        sqlite.ensure_indexed(session, function()
+          M.apply_filter_expr(session, session.cur_col, expr)
+        end)
       end
     end)
   end, "Filter Current Column by Expression")
 
   map("s", function()
-    session.sort = { col_idx = session.cur_col, dir = "ASC" }
-    session.cur_row = 1
-    session.top_row = 1
-    viewport.render(session)
+    sqlite.ensure_indexed(session, function()
+      session.sort = { col_idx = session.cur_col, dir = "ASC" }
+      session.batch_cache = nil
+      session.cur_row = 1
+      session.top_row = 1
+      viewport.render(session)
+    end)
   end, "Sort Column Ascending ▲")
 
   map("S", function()
-    session.sort = { col_idx = session.cur_col, dir = "DESC" }
-    session.cur_row = 1
-    session.top_row = 1
-    viewport.render(session)
+    sqlite.ensure_indexed(session, function()
+      session.sort = { col_idx = session.cur_col, dir = "DESC" }
+      session.batch_cache = nil
+      session.cur_row = 1
+      session.top_row = 1
+      viewport.render(session)
+    end)
   end, "Sort Column Descending ▼")
 
   -- 4. Counts, Value Frequencies, Column Analytics & SQL
   map("gv", function()
-    modals.open_value_counts(session, session.cur_col)
+    sqlite.ensure_indexed(session, function()
+      modals.open_value_counts(session, session.cur_col)
+    end)
   end, "Value Counts / Frequency Breakdown")
 
   map("gs", function()
-    modals.open_column_stats(session, session.cur_col)
+    sqlite.ensure_indexed(session, function()
+      modals.open_column_stats(session, session.cur_col)
+    end)
   end, "Column Summary Statistics & Distribution")
 
   map("gc", function()
@@ -410,11 +454,15 @@ local function attach_keymaps(session)
   end, "Toggle 100-Column Vertical Record Card")
 
   map("gq", function()
-    modals.open_sql_runner(session)
+    sqlite.ensure_indexed(session, function()
+      modals.open_sql_runner(session)
+    end)
   end, "Run SQL Query on CSV")
 
   map("<leader>cq", function()
-    modals.open_sql_runner(session)
+    sqlite.ensure_indexed(session, function()
+      modals.open_sql_runner(session)
+    end)
   end, "Run SQL Query on CSV")
 
   -- 5. Pinning (Freeze Panes), Hiding, Width & Heatmap
@@ -593,6 +641,7 @@ function M.apply_filter_expr(session, col_idx, expr)
     end
   end
   session.cached_where_sig = nil
+  session.batch_cache = nil
   session.cur_row = 1
   session.top_row = 1
   viewport.render(session)
@@ -666,7 +715,7 @@ function M.open(filepath)
     return existing
   end
 
-  local slice, err = parser.read_initial_slice(filepath, 250)
+  local slice, err = parser.read_initial_slice(filepath, config.options.batch_size or 500)
   if not slice then
     vim.notify("[SuperCsv] " .. tostring(err), vim.log.levels.ERROR)
     return nil
@@ -707,6 +756,8 @@ function M.open(filepath)
     types = slice.types,
     col_widths = slice.col_widths,
     preview_rows = slice.preview_rows,
+    file_offset = slice.file_offset,
+    eof_reached = slice.eof_reached,
     total_rows = #slice.preview_rows,
     filtered_rows = #slice.preview_rows,
     view_buf = view_buf,
@@ -735,13 +786,13 @@ function M.open(filepath)
   -- Render Stage 1 immediately (< 15ms)
   viewport.render(session)
 
-  -- Start Stage 2 SQLite engine
+  -- Open cached SQLite DB if present, or import synchronously only for small files (< 2MB)
   if config.options.sqlite_backend then
     sqlite.init_session_db(session, function()
       if vim.api.nvim_buf_is_valid(view_buf) then
         viewport.render(session)
       end
-    end)
+    end, false)
   end
 
   return session
@@ -788,6 +839,9 @@ function M.attach_buf_autocmds(session)
           local v = vim.fn.winsaveview()
           if v.topline and v.topline > 1 then
             local delta = v.topline - 1
+            if not session.sqlite_ready and not session.eof_reached then
+              parser.ensure_rows_loaded(session, (session.top_row or 1) + delta + (session.page_size or 30) + 40)
+            end
             local max_r = session.filtered_rows or session.total_rows or 1
             session.top_row = math.min(math.max(1, max_r - (session.page_size or 30) + 1), session.top_row + delta)
             session.cur_row = math.max(session.top_row, math.min(max_r, session.cur_row + delta))
@@ -959,6 +1013,9 @@ function M.setup(opts)
         local s = M.sessions_by_buf[b]
         if s then
           s.view_win = mp.winid
+          if not s.sqlite_ready and not s.eof_reached then
+            parser.ensure_rows_loaded(s, (s.top_row or 1) + (s.page_size or 30) + 40)
+          end
           local max_r = s.filtered_rows or s.total_rows or 1
           s.cur_row = math.min(max_r, s.cur_row + 3)
           s.top_row = math.min(math.max(1, max_r - (s.page_size or 30) + 1), s.top_row + 3)
@@ -997,6 +1054,11 @@ function M.setup(opts)
       callback = function(ev)
         local path = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(ev.buf), ":p")
         if config.options.enabled and path ~= "" and not M.disabled_paths[path] then
+          vim.bo[ev.buf].buftype = "nofile"
+          vim.bo[ev.buf].modifiable = false
+          vim.bo[ev.buf].modified = false
+          vim.bo[ev.buf].bufhidden = "wipe"
+          vim.bo[ev.buf].buflisted = false
           M.open(path)
         else
           vim.cmd("noautocmd edit " .. vim.fn.fnameescape(path))
