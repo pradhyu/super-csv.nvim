@@ -155,19 +155,10 @@ function M.get_db_path(filepath, file_size, mtime)
   return string.format("%s/%s_%s.sqlite", config.cache_dir, basename, hash)
 end
 
---- Create schema and import CSV into SQLite (async for large files, fast sync for small/medium files)
-function M.init_session_db(session, on_ready)
+--- Create schema and import CSV into SQLite (only when cached, small < 2MB, or explicitly requested)
+function M.init_session_db(session, on_ready, force_import)
   local db_path = M.get_db_path(session.filepath, session.file_size, session.mtime)
   session.db_path = db_path
-
-  -- Build CREATE TABLE with c1..cN plus friendly view 'csv' with actual column names
-  local col_defs = {}
-  local view_cols = { "rowid AS _rowid_" }
-  for c = 1, session.num_cols do
-    table.insert(col_defs, string.format("c%d TEXT", c))
-    local safe_name = session.headers[c]:gsub('"', '""')
-    table.insert(view_cols, string.format('c%d AS "%s"', c, safe_name))
-  end
 
   local function finalize_open()
     local db, err = M.open_db(db_path)
@@ -176,33 +167,67 @@ function M.init_session_db(session, on_ready)
       return
     end
     session.db = db
-    local cnt_rows = M.query(db, "SELECT COUNT(*) FROM csv_data;")
+    -- Use O(1) B-Tree MAX(rowid) instead of full-table COUNT(*) scan!
+    local cnt_rows = M.query(db, "SELECT MAX(rowid) FROM csv_data;")
     session.total_rows = (cnt_rows and cnt_rows[1] and tonumber(cnt_rows[1][1])) or #session.preview_rows
+    session.filtered_rows = session.total_rows
     session.sqlite_ready = true
+    session.batch_cache = nil
     session.stats_cache = {}
+    session.fast_stats_cache = {}
     if on_ready then
       vim.schedule(on_ready)
     end
   end
 
-  -- If cached DB already exists and has csv_data table, open immediately!
+  -- 1. If cached DB already exists and has csv_data table, open immediately in < 0.1ms!
   if vim.fn.filereadable(db_path) == 1 then
     local test_db = M.open_db(db_path)
     if test_db then
       local check = M.query(test_db, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='csv_data';")
       if check and check[1] and tonumber(check[1][1]) == 1 then
-        session.db = test_db
-        local cnt_rows = M.query(test_db, "SELECT COUNT(*) FROM csv_data;")
-        session.total_rows = (cnt_rows and cnt_rows[1] and tonumber(cnt_rows[1][1])) or #session.preview_rows
-        session.sqlite_ready = true
-        session.stats_cache = {}
-        if on_ready then
-          vim.schedule(on_ready)
+        local cnt_rows = M.query(test_db, "SELECT MAX(rowid) FROM csv_data;")
+        local max_id = (cnt_rows and cnt_rows[1] and tonumber(cnt_rows[1][1])) or 0
+        if max_id > 0 then
+          session.db = test_db
+          session.total_rows = max_id
+          session.filtered_rows = max_id
+          session.sqlite_ready = true
+          session.batch_cache = nil
+          session.stats_cache = {}
+          session.fast_stats_cache = {}
+          if on_ready then
+            vim.schedule(on_ready)
+          end
+          return
         end
-        return
       end
       M.close_db(test_db)
     end
+  end
+
+  local cfg = require("super-csv.config").options
+  -- 2. For huge files (>= 2MB), do NOT start loading/indexing everything on open when lazy_sqlite is enabled!
+  --    Instead, stream batches from disk on scroll, and only index into SQLite when force_import is true.
+  if cfg.lazy_sqlite ~= false and not force_import and (session.file_size or 0) >= 2 * 1024 * 1024 then
+    return
+  end
+
+  if session.sqlite_indexing then
+    if on_ready then
+      session._on_index_callbacks = session._on_index_callbacks or {}
+      table.insert(session._on_index_callbacks, on_ready)
+    end
+    return
+  end
+
+  -- Build CREATE TABLE with c1..cN plus friendly view 'csv' with actual column names
+  local col_defs = {}
+  local view_cols = { "rowid AS _rowid_" }
+  for c = 1, session.num_cols do
+    table.insert(col_defs, string.format("c%d TEXT", c))
+    local safe_name = session.headers[c]:gsub('"', '""')
+    table.insert(view_cols, string.format('c%d AS "%s"', c, safe_name))
   end
 
   local sep_cmd = ".mode csv"
@@ -231,18 +256,38 @@ CREATE VIEW csv AS SELECT %s FROM csv_data;
     .. string.format('.import --skip 1 %s csv_data\n', vim.fn.shellescape(session.filepath))
 
   -- For small files (< 2MB), import synchronously in ~15ms so SQLite is ready immediately on first frame!
-  if session.file_size < 2 * 1024 * 1024 then
+  if (session.file_size or 0) < 2 * 1024 * 1024 then
     vim.fn.system({ "sqlite3", db_path }, import_script)
     finalize_open()
   else
     session.sqlite_indexing = true
+    session._on_index_callbacks = session._on_index_callbacks or {}
+    if on_ready then
+      table.insert(session._on_index_callbacks, on_ready)
+    end
+    vim.notify("[SuperCsv] Indexing huge file into SQLite in background...", vim.log.levels.INFO)
     vim.system({ "sqlite3", db_path }, { stdin = import_script }, function(_res)
       vim.schedule(function()
         session.sqlite_indexing = false
         finalize_open()
+        local cbs = session._on_index_callbacks or {}
+        session._on_index_callbacks = {}
+        for _, cb in ipairs(cbs) do
+          pcall(cb)
+        end
       end)
     end)
   end
+end
+
+--- Ensure SQLite DB is indexed (triggers background import if not yet indexed)
+function M.ensure_indexed(session, on_ready)
+  if session.sqlite_ready and session.db then
+    if on_ready then on_ready() end
+    return true
+  end
+  M.init_session_db(session, on_ready, true)
+  return session.sqlite_ready == true
 end
 
 --- Build SQL WHERE clause from active session filters and global grep
