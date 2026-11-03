@@ -1,0 +1,121 @@
+emp_id,full_name,email,department,team,role,level,location,country,salary_usd,bonus_pct,equity_shares,is_remote,hire_date,perf_rating,status
+EMP-1001,Hannah Jensen,hannah.jensen.1@acme-cloud.io,Product,Developer Experience,Group PM,L5,San Francisco,US,173134,10,9159,false,2021-10-27,Meets,ACTIVE
+EMP-1002,Omar Muller,omar.muller.2@acme-cloud.io,Product,Growth,Group PM,L5,San Francisco,US,163461,10,8476,false,2026-08-01,Strongly Exceeds,ACTIVE
+EMP-1003,Ethan Silva,ethan.silva.3@acme-cloud.io,Sales,EMEA Mid-Market,Sales Director,L8,Seattle,US,263105,30,16579,true,2021-09-12,Meets,ON_LEAVE
+EMP-1004,Liam Silva,liam.silva.4@acme-cloud.io,Data Science,Forecasting,Analytics Engineer,L8,London,UK,248412,30,15047,false,2020-07-18,Exceeds,CONTRACTOR
+EMP-1005,Noah Smith,noah.smith.5@acme-cloud.io,Product,Growth,UX Researcher,L3,Seattle,US,113482,10,2765,false,2021-02-19,New Hire,ACTIVE
+EMP-1006,Zoe Sato,zoe.sato.6@acme-cloud.io,Sales,EMEA Mid-Market,Account Executive,L4,Seattle,US,149000,10,5820,true,2020-04-09,Meets,ACTIVE
+EMP-1007,Lucas Nguyen,lucas.nguyen.7@acme-cloud.io,Engineering,Frontend,Principal Architect,L7,Singapore,SG,237695,25,13431,false,2022-01-11,Meets,ON_LEAVE
+EMP-1008,Maya Rossi,maya.rossi.8@acme-cloud.io,Engineering,Frontend,Principal Architect,L3,Toronto,CA,107811,10,2688,true,2023-03-05,New Hire,ON_LEAVE
+EMP-1009,Aria Silva,aria.silva.9@acme-cloud.io,Data Science,Analytics,ML Engineer,L6,San Francisco,US,204895,20,11114,false,2019-06-06,Exceeds,CONTRACTOR
+EMP-1010,Chloe Chen,chloe.chen.10@acme-cloud.io,Product,Enterprise,UX Researcher,L4,Toronto,CA,145206,10,6561,false,2022-08-26,Meets,CONTRACTOR
+EMP-1011,Elena Sato,elena.sato.11@acme-cloud.io,Engineering,AI Systems,Staff Engineer,L6,New York,US,205735,20,11733,false,2026-09-21,Exceeds,ACTIVE
+EMP-1012,Omar Rossi,omar.rossi.12@acme-cloud.io,Sales,EMEA Mid-Market,Account Executive,L7,Toronto,CA,233466,25,13335,true,2023-06-26,Exceeds,ACTIVE
+EMP-1013,Hannah Nguyen,hannah.nguyen.13@acme-cloud.io,Operations,Legal,Legal Counsel,L4,Tokyo,JP,135536,10,6752,true,2022-10-22,Exceeds,CONTRACTOR
+EMP-1014,Maya Rossi,maya.rossi.14@acme-cloud.io,Operations,Legal,FP&A Lead,L6,Austin,US,196133,20,11642,true,2019-12-18,Exceeds,ACTIVE
+EMP-1015,Lucas Chen,lucas.chen.15@acme-cloud.io,Sales,APAC Commercial,Solutions Architect,L3,Seattle,US,109717,10,3477,true,2019-05-14,Exceeds,CONTRACTOR
+EMP-1016,Hannah hassan,hannah.hassan.16@acme-cloud.io,Operations,People Ops,FP&A Lead,L7,London,UK,225208,25,14404,false,2022-09-04,Exceeds,ACTIVE
+EMP-1017,Chloe Okafor,chloe.okafor.17@acme-cloud.io,Product,Developer Experience,Product Designer,L8,Berlin,DE,257120,30,16922,true,2020-11-07,Needs Improvement,ON_LEAVE
+EMP-1018,Lucas Silva,lucas.silva.18@acme-cloud.io,Sales,Enterprise NA,Solutions Architect,L8,San Francisco,US,249325,30,15062,false,2023-09-18,Needs Improvement,ON_LEAVE
+EMP-1019,Mateo Jensen,mateo.jensen.19@acme-cloud.io,Data Science,Forecasting,Data Scientist,L3,Berlin,DE,107624,10,3249,true,2024-07-19,Exceeds,CONTRACTOR
+EMP-1020,Liam Smith,liam.smith.20@acme-cloud.io,Product,Growth,UX Researcher,L8,Toronto,CA,259529,30,16502,false,2020-05-14,New Hire,ON_LEAVE
+EMP-1021,Chloe Kowalski,chloe.kowalski.21@acme-cloud.io,Data Science,Forecasting,ML Engineer,L7,Berlin,DE,230872,25,13321,true,2024-10-20,Meets,ACTIVE
+EMP-1022,Omar Kowalski,omar.kowalski.22@acme-cloud.io,Sales,EMEA Mid-Market,Account Executive,L8,New York,US,254881,30,16229,false,2020-07-07,New Hire,ACTIVE
+EMP-1023,Omar Sato,omar.sato.23@acme-cloud.io,Sales,Enterprise NA,Solutions Architect,L5,San Francisco,US,176704,10,8923,true,2021-06-13,Meets,ACTIVE
+EMP-1024,Lucas Jensen,lucas.jensen.24@acme-cloud.io,Product,Growth,Senior PM,L3,Tokyo,JP,108801,10,2879,true,2019-06-07,Meets,ACTIVE
+EMP-1025,Liam Kowalski,liam.kowalski.25@acme-cloud.io,Product,Growth,UX Researcher,L4,Austin,US,146232,10,5685,true,2024-07-15,Meets,ON_LEAVE
+EMP-1026,Noah Garcia,noah.garcia.26@acme-cloud.io,Data Science,Analytics,Analytics Engineer,L4,San Francisco,US,135825,10,5323,false,2025-11-17,New Hire,ON_LEAVE
+EMP-1027,Omar Vance,omar.vance.27@acme-cloud.io,Product,Enterprise,Senior PM,L5,New York,US,177120,10,8556,false,2020-08-23,Strongly Exceeds,ACTIVE
+EMP-1028,Sofia Smith,sofia.smith.28@acme-cloud.io,Sales,APAC Commercial,Solutions Architect,L3,Berlin,DE,109490,10,4403,false,2021-09-24,Strongly Exceeds,CONTRACTOR
+EMP-1029,Zoe Garcia,zoe.garcia.29@acme-cloud.io,Engineering,Security,Staff Engineer,L3,Toronto,CA,119484,10,2833,false,2026-08-02,Needs Improvement,ACTIVE
+EMP-1030,Hannah Okafor,hannah.okafor.30@acme-cloud.io,Sales,EMEA Mid-Market,Account Executive,L3,Austin,US,113639,10,3060,true,2019-02-01,Meets,ACTIVE
+EMP-1031,Sofia Garcia,sofia.garcia.31@acme-cloud.io,Product,Developer Experience,UX Researcher,L3,London,UK,108776,10,3103,true,2023-10-11,New Hire,ACTIVE
+EMP-1032,Ethan Muller,ethan.muller.32@acme-cloud.io,Data Science,Analytics,Analytics Engineer,L4,Austin,US,145388,10,6497,false,2025-12-17,Strongly Exceeds,ON_LEAVE
+EMP-1033,Lucas Jensen,lucas.jensen.33@acme-cloud.io,Product,Developer Experience,Group PM,L5,Austin,US,174430,10,8989,true,2020-04-26,Needs Improvement,ON_LEAVE
+EMP-1034,Maya Okafor,maya.okafor.34@acme-cloud.io,Operations,Legal,Recruiter,L3,Seattle,US,124080,10,4041,true,2026-10-03,Needs Improvement,ON_LEAVE
+EMP-1035,Zoe Berg,zoe.berg.35@acme-cloud.io,Operations,Finance,FP&A Lead,L4,Singapore,SG,147867,10,5760,true,2023-01-11,Strongly Exceeds,ACTIVE
+EMP-1036,Sofia hassan,sofia.hassan.36@acme-cloud.io,Sales,EMEA Mid-Market,Account Executive,L4,Singapore,SG,142250,10,6240,false,2025-05-24,Needs Improvement,ACTIVE
+EMP-1037,Chloe Kowalski,chloe.kowalski.37@acme-cloud.io,Engineering,Core DB,Principal Architect,L3,Toronto,CA,111624,10,3050,false,2019-03-23,Exceeds,ON_LEAVE
+EMP-1038,Sofia Patel,sofia.patel.38@acme-cloud.io,Data Science,ML Ops,Analytics Engineer,L6,Singapore,SG,204195,20,10353,true,2022-12-14,Needs Improvement,ON_LEAVE
+EMP-1039,Hannah Vance,hannah.vance.39@acme-cloud.io,Data Science,Forecasting,ML Engineer,L3,Tokyo,JP,115812,10,3624,false,2024-05-19,New Hire,ON_LEAVE
+EMP-1040,Maya Kowalski,maya.kowalski.40@acme-cloud.io,Engineering,Core DB,Principal Architect,L7,Singapore,SG,237798,25,13978,true,2025-01-10,New Hire,ACTIVE
+EMP-1041,Elena hassan,elena.hassan.41@acme-cloud.io,Sales,EMEA Mid-Market,Account Executive,L8,Singapore,SG,247358,30,16051,false,2022-05-17,New Hire,ACTIVE
+EMP-1042,Maya Patel,maya.patel.42@acme-cloud.io,Product,Developer Experience,Group PM,L4,San Francisco,US,150191,10,6291,false,2020-08-17,Exceeds,ACTIVE
+EMP-1043,Devon Kowalski,devon.kowalski.43@acme-cloud.io,Data Science,ML Ops,Data Scientist,L5,Berlin,DE,168156,10,8095,true,2020-07-15,Needs Improvement,ACTIVE
+EMP-1044,Devon Chen,devon.chen.44@acme-cloud.io,Product,Developer Experience,Group PM,L6,Toronto,CA,198124,20,10609,true,2023-03-26,Exceeds,ACTIVE
+EMP-1045,Priya Jensen,priya.jensen.45@acme-cloud.io,Data Science,Forecasting,Data Scientist,L6,Toronto,CA,209802,20,11072,false,2022-04-28,Strongly Exceeds,ACTIVE
+EMP-1046,Priya Muller,priya.muller.46@acme-cloud.io,Product,Developer Experience,Senior PM,L6,Toronto,CA,206301,20,11800,true,2026-02-06,Exceeds,ACTIVE
+EMP-1047,Omar Sato,omar.sato.47@acme-cloud.io,Product,Enterprise,Senior PM,L4,San Francisco,US,135480,10,6177,true,2022-10-27,Exceeds,ACTIVE
+EMP-1048,Priya Garcia,priya.garcia.48@acme-cloud.io,Engineering,Security,Senior SWE,L3,Singapore,SG,114074,10,3531,true,2026-07-09,New Hire,CONTRACTOR
+EMP-1049,Chloe Rossi,chloe.rossi.49@acme-cloud.io,Data Science,Analytics,Analytics Engineer,L4,Berlin,DE,148380,10,5632,false,2019-10-06,Exceeds,ON_LEAVE
+EMP-1050,Priya Vance,priya.vance.50@acme-cloud.io,Engineering,AI Systems,Staff Engineer,L3,Berlin,DE,112580,10,2511,true,2022-08-14,Strongly Exceeds,ACTIVE
+EMP-1051,Priya Rossi,priya.rossi.51@acme-cloud.io,Operations,People Ops,FP&A Lead,L5,Berlin,DE,182946,10,9330,true,2021-05-06,Needs Improvement,ACTIVE
+EMP-1052,Hannah Sato,hannah.sato.52@acme-cloud.io,Sales,APAC Commercial,Solutions Architect,L3,Tokyo,JP,108605,10,2984,true,2025-12-03,Meets,CONTRACTOR
+EMP-1053,Aria Muller,aria.muller.53@acme-cloud.io,Sales,Enterprise NA,Sales Director,L8,Tokyo,JP,260547,30,15653,true,2021-08-10,Exceeds,ACTIVE
+EMP-1054,Ethan Rossi,ethan.rossi.54@acme-cloud.io,Engineering,AI Systems,Staff Engineer,L8,Austin,US,258349,30,16014,true,2023-07-19,Exceeds,ACTIVE
+EMP-1055,Hannah Berg,hannah.berg.55@acme-cloud.io,Operations,Finance,Legal Counsel,L7,Seattle,US,232856,25,12580,false,2020-06-27,New Hire,ON_LEAVE
+EMP-1056,Noah Okafor,noah.okafor.56@acme-cloud.io,Data Science,Forecasting,Data Scientist,L7,London,UK,220813,25,14378,true,2021-10-22,Meets,ACTIVE
+EMP-1057,Aria Nguyen,aria.nguyen.57@acme-cloud.io,Engineering,Core DB,Staff Engineer,L8,Toronto,CA,259840,30,16970,false,2019-02-23,New Hire,ACTIVE
+EMP-1058,Zoe Kowalski,zoe.kowalski.58@acme-cloud.io,Operations,Finance,Recruiter,L5,Singapore,SG,177941,10,8852,true,2019-12-07,Needs Improvement,ACTIVE
+EMP-1059,Liam Kim,liam.kim.59@acme-cloud.io,Product,Developer Experience,Group PM,L6,Tokyo,JP,208192,20,10571,false,2024-10-16,Meets,ACTIVE
+EMP-1060,Omar Nguyen,omar.nguyen.60@acme-cloud.io,Data Science,Forecasting,ML Engineer,L7,San Francisco,US,238782,25,12544,false,2026-06-19,Needs Improvement,ON_LEAVE
+EMP-1061,Ethan Vance,ethan.vance.61@acme-cloud.io,Data Science,Forecasting,Analytics Engineer,L8,Austin,US,256370,30,16488,true,2025-03-07,New Hire,CONTRACTOR
+EMP-1062,Chloe Patel,chloe.patel.62@acme-cloud.io,Operations,Finance,Recruiter,L4,San Francisco,US,138039,10,6858,true,2019-12-04,Exceeds,ACTIVE
+EMP-1063,Noah Silva,noah.silva.63@acme-cloud.io,Operations,Legal,Recruiter,L7,Seattle,US,234552,25,14438,false,2023-04-11,Meets,ACTIVE
+EMP-1064,Hannah Kowalski,hannah.kowalski.64@acme-cloud.io,Sales,APAC Commercial,Account Executive,L5,Austin,US,164962,10,7949,true,2026-04-21,Meets,ACTIVE
+EMP-1065,Aria Rossi,aria.rossi.65@acme-cloud.io,Operations,People Ops,Recruiter,L7,Seattle,US,219660,25,14393,true,2021-01-22,Meets,ACTIVE
+EMP-1066,Elena Chen,elena.chen.66@acme-cloud.io,Product,Developer Experience,Senior PM,L5,Toronto,CA,174112,10,7557,false,2026-04-01,Exceeds,ACTIVE
+EMP-1067,Aria Chen,aria.chen.67@acme-cloud.io,Data Science,ML Ops,ML Engineer,L7,Berlin,DE,228230,25,14457,false,2026-11-25,Meets,ACTIVE
+EMP-1068,Zoe Berg,zoe.berg.68@acme-cloud.io,Operations,Finance,Legal Counsel,L7,Singapore,SG,235902,25,13625,false,2020-06-25,Meets,ACTIVE
+EMP-1069,Mateo Rossi,mateo.rossi.69@acme-cloud.io,Product,Enterprise,Group PM,L7,London,UK,233086,25,14201,true,2022-03-08,Meets,ON_LEAVE
+EMP-1070,Omar Muller,omar.muller.70@acme-cloud.io,Data Science,Forecasting,ML Engineer,L3,San Francisco,US,118486,10,3932,true,2023-08-07,Exceeds,ACTIVE
+EMP-1071,Elena Okafor,elena.okafor.71@acme-cloud.io,Operations,Legal,Recruiter,L8,Toronto,CA,263685,30,16934,true,2022-03-15,Meets,ON_LEAVE
+EMP-1072,Omar Vance,omar.vance.72@acme-cloud.io,Sales,EMEA Mid-Market,Solutions Architect,L7,Toronto,CA,227621,25,12903,false,2022-10-06,Strongly Exceeds,ACTIVE
+EMP-1073,Priya Patel,priya.patel.73@acme-cloud.io,Sales,Enterprise NA,Account Executive,L5,London,UK,182697,10,8345,false,2021-02-09,Needs Improvement,ACTIVE
+EMP-1074,Zoe Rossi,zoe.rossi.74@acme-cloud.io,Operations,Finance,Legal Counsel,L3,Singapore,SG,120034,10,3270,false,2022-10-16,Meets,ON_LEAVE
+EMP-1075,Zoe Jensen,zoe.jensen.75@acme-cloud.io,Product,Enterprise,UX Researcher,L3,San Francisco,US,110191,10,3389,true,2025-06-06,Meets,ACTIVE
+EMP-1076,Lucas Muller,lucas.muller.76@acme-cloud.io,Data Science,ML Ops,Analytics Engineer,L8,Berlin,DE,264926,30,15445,true,2025-12-16,Meets,ACTIVE
+EMP-1077,Chloe Silva,chloe.silva.77@acme-cloud.io,Data Science,Forecasting,Analytics Engineer,L7,Austin,US,238165,25,14074,false,2024-06-10,Strongly Exceeds,ON_LEAVE
+EMP-1078,Chloe Muller,chloe.muller.78@acme-cloud.io,Sales,Enterprise NA,Sales Director,L6,Singapore,SG,204877,20,10877,false,2026-01-07,Meets,ACTIVE
+EMP-1079,Aria Jensen,aria.jensen.79@acme-cloud.io,Product,Enterprise,Group PM,L7,Berlin,DE,238557,25,12554,true,2021-08-18,Strongly Exceeds,ACTIVE
+EMP-1080,Hannah Jensen,hannah.jensen.80@acme-cloud.io,Engineering,Core DB,SWE II,L3,London,UK,108502,10,2762,false,2021-04-02,Meets,ACTIVE
+EMP-1081,Ethan Nguyen,ethan.nguyen.81@acme-cloud.io,Sales,EMEA Mid-Market,Solutions Architect,L6,Singapore,SG,196998,20,10953,true,2026-06-13,Strongly Exceeds,ACTIVE
+EMP-1082,Ethan Kowalski,ethan.kowalski.82@acme-cloud.io,Product,Enterprise,Senior PM,L4,London,UK,151510,10,5926,true,2025-01-08,Exceeds,ACTIVE
+EMP-1083,Sofia Nguyen,sofia.nguyen.83@acme-cloud.io,Product,Enterprise,UX Researcher,L7,Singapore,SG,229544,25,13698,false,2024-07-21,Strongly Exceeds,ON_LEAVE
+EMP-1084,Aria Sato,aria.sato.84@acme-cloud.io,Product,Enterprise,Product Designer,L4,Tokyo,JP,139620,10,5811,false,2022-02-04,Meets,ACTIVE
+EMP-1085,Omar Rossi,omar.rossi.85@acme-cloud.io,Engineering,Frontend,Senior SWE,L7,Singapore,SG,220160,25,12812,false,2019-06-13,Meets,ACTIVE
+EMP-1086,Lucas Rossi,lucas.rossi.86@acme-cloud.io,Operations,Finance,Recruiter,L6,Berlin,DE,194285,20,10095,true,2025-12-17,Strongly Exceeds,ACTIVE
+EMP-1087,Ethan Patel,ethan.patel.87@acme-cloud.io,Data Science,ML Ops,Analytics Engineer,L7,Singapore,SG,237987,25,13978,false,2022-03-18,Strongly Exceeds,CONTRACTOR
+EMP-1088,Omar Kowalski,omar.kowalski.88@acme-cloud.io,Sales,APAC Commercial,Account Executive,L8,San Francisco,US,258332,30,16473,false,2026-12-13,Meets,ON_LEAVE
+EMP-1089,Zoe Kowalski,zoe.kowalski.89@acme-cloud.io,Product,Developer Experience,Group PM,L4,Berlin,DE,136791,10,5641,true,2021-07-06,Needs Improvement,ACTIVE
+EMP-1090,Liam Rossi,liam.rossi.90@acme-cloud.io,Engineering,Security,Staff Engineer,L6,San Francisco,US,202600,20,11446,false,2022-09-26,Exceeds,CONTRACTOR
+EMP-1091,Noah Garcia,noah.garcia.91@acme-cloud.io,Product,Developer Experience,Product Designer,L5,Austin,US,166500,10,8346,false,2023-08-23,New Hire,ACTIVE
+EMP-1092,Priya Garcia,priya.garcia.92@acme-cloud.io,Data Science,ML Ops,Analytics Engineer,L5,Seattle,US,166597,10,8751,false,2024-06-04,Exceeds,ACTIVE
+EMP-1093,Liam Jensen,liam.jensen.93@acme-cloud.io,Product,Developer Experience,Group PM,L5,San Francisco,US,168771,10,8081,true,2025-01-21,Exceeds,CONTRACTOR
+EMP-1094,Ethan Muller,ethan.muller.94@acme-cloud.io,Product,Growth,Senior PM,L8,Singapore,SG,260871,30,16035,true,2021-07-08,Strongly Exceeds,CONTRACTOR
+EMP-1095,Kenji Chen,kenji.chen.95@acme-cloud.io,Product,Growth,UX Researcher,L4,London,UK,135913,10,6380,false,2023-09-18,Meets,ACTIVE
+EMP-1096,Noah Jensen,noah.jensen.96@acme-cloud.io,Product,Developer Experience,Product Designer,L7,San Francisco,US,221042,25,12790,true,2022-09-02,Meets,CONTRACTOR
+EMP-1097,Liam Muller,liam.muller.97@acme-cloud.io,Engineering,Platform,Staff Engineer,L7,Berlin,DE,230264,25,14189,true,2020-01-04,New Hire,ACTIVE
+EMP-1098,Zoe Silva,zoe.silva.98@acme-cloud.io,Sales,APAC Commercial,Solutions Architect,L6,London,UK,191814,20,10960,true,2025-05-14,Needs Improvement,ACTIVE
+EMP-1099,Noah Sato,noah.sato.99@acme-cloud.io,Engineering,Platform,Senior SWE,L6,Singapore,SG,205538,20,11741,true,2024-07-15,New Hire,ON_LEAVE
+EMP-1100,Noah Sato,noah.sato.100@acme-cloud.io,Engineering,Platform,Principal Architect,L4,New York,US,148802,10,6878,true,2025-01-01,Meets,CONTRACTOR
+EMP-1101,Omar Muller,omar.muller.101@acme-cloud.io,Data Science,ML Ops,Analytics Engineer,L3,Singapore,SG,125727,10,3346,false,2019-11-25,Needs Improvement,CONTRACTOR
+EMP-1102,Kenji Chen,kenji.chen.102@acme-cloud.io,Operations,Legal,Recruiter,L4,Berlin,DE,143178,10,5191,true,2026-12-06,Exceeds,ACTIVE
+EMP-1103,Priya Garcia,priya.garcia.103@acme-cloud.io,Product,Developer Experience,Product Designer,L3,Tokyo,JP,112587,10,4382,true,2022-06-22,Meets,ON_LEAVE
+EMP-1104,Kenji Smith,kenji.smith.104@acme-cloud.io,Sales,Enterprise NA,Sales Director,L8,Austin,US,255830,30,16114,false,2026-06-04,Exceeds,ACTIVE
+EMP-1105,Omar Kim,omar.kim.105@acme-cloud.io,Engineering,Platform,Senior SWE,L4,Seattle,US,154239,10,6326,true,2024-03-17,Exceeds,ACTIVE
+EMP-1106,Elena Garcia,elena.garcia.106@acme-cloud.io,Data Science,ML Ops,Data Scientist,L7,Berlin,DE,230988,25,13172,false,2025-12-24,Meets,ON_LEAVE
+EMP-1107,Zoe Vance,zoe.vance.107@acme-cloud.io,Data Science,Analytics,Data Scientist,L6,New York,US,196245,20,10161,true,2023-01-20,New Hire,ACTIVE
+EMP-1108,Aria Muller,aria.muller.108@acme-cloud.io,Sales,EMEA Mid-Market,Account Executive,L8,Berlin,DE,261321,30,15658,true,2020-02-04,Exceeds,CONTRACTOR
+EMP-1109,Elena Garcia,elena.garcia.109@acme-cloud.io,Operations,Finance,Recruiter,L8,Berlin,DE,257180,30,16653,true,2023-05-26,Meets,ACTIVE
+EMP-1110,Sofia Kim,sofia.kim.110@acme-cloud.io,Operations,People Ops,FP&A Lead,L3,Austin,US,121826,10,2597,true,2023-05-20,Strongly Exceeds,ACTIVE
+EMP-1111,Devon Sato,devon.sato.111@acme-cloud.io,Operations,Finance,Legal Counsel,L3,Toronto,CA,124388,10,3828,true,2019-12-01,Strongly Exceeds,CONTRACTOR
+EMP-1112,Priya Okafor,priya.okafor.112@acme-cloud.io,Product,Enterprise,Product Designer,L5,Singapore,SG,179623,10,7685,false,2026-03-25,Meets,CONTRACTOR
+EMP-1113,Zoe Silva,zoe.silva.113@acme-cloud.io,Sales,Enterprise NA,Solutions Architect,L5,San Francisco,US,172393,10,8888,false,2022-08-18,New Hire,ACTIVE
+EMP-1114,Zoe Silva,zoe.silva.114@acme-cloud.io,Data Science,ML Ops,Data Scientist,L6,Toronto,CA,207773,20,11060,true,2026-04-21,Exceeds,ACTIVE
+EMP-1115,Liam Garcia,liam.garcia.115@acme-cloud.io,Product,Growth,Group PM,L5,London,UK,178148,10,8271,false,2024-07-08,Needs Improvement,CONTRACTOR
+EMP-1116,Maya Silva,maya.silva.116@acme-cloud.io,Sales,Enterprise NA,Account Executive,L8,New York,US,253393,30,15313,true,2023-03-13,Needs Improvement,ACTIVE
+EMP-1117,Mateo Vance,mateo.vance.117@acme-cloud.io,Product,Growth,Group PM,L8,Tokyo,JP,254195,30,16973,false,2022-04-10,Exceeds,CONTRACTOR
+EMP-1118,Priya Sato,priya.sato.118@acme-cloud.io,Data Science,Forecasting,ML Engineer,L3,Toronto,CA,111101,10,3378,false,2025-12-27,Strongly Exceeds,ACTIVE
+EMP-1119,Devon Smith,devon.smith.119@acme-cloud.io,Data Science,Forecasting,Data Scientist,L4,New York,US,147891,10,5791,true,2019-07-07,Strongly Exceeds,ACTIVE
+EMP-1120,Maya Vance,maya.vance.120@acme-cloud.io,Operations,Finance,Recruiter,L8,Singapore,SG,262037,30,15835,false,2021-01-16,Needs Improvement,ACTIVE

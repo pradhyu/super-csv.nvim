@@ -1,0 +1,4 @@
+examples/million_100cols.csv
+*.sqlite
+*.db
+*.tmp
