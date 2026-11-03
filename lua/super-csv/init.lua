@@ -46,9 +46,12 @@ local function attach_keymaps(session)
 
   -- 1. Horizontal Column Navigation (across 100+ columns)
   map("l", function() step_col(session, 1) end, "Next Column")
+  map("w", function() step_col(session, 1) end, "Next Column")
+  map("e", function() step_col(session, 1) end, "Next Column")
   map("<Right>", function() step_col(session, 1) end, "Next Column")
   map("<Tab>", function() step_col(session, 1) end, "Next Column")
   map("h", function() step_col(session, -1) end, "Previous Column")
+  map("b", function() step_col(session, -1) end, "Previous Column")
   map("<Left>", function() step_col(session, -1) end, "Previous Column")
   map("<S-Tab>", function() step_col(session, -1) end, "Previous Column")
 
@@ -270,30 +273,18 @@ local function attach_keymaps(session)
         session.cur_col = clicked_col
       end
       if mp.line == 3 or mp.line == 4 then
-        modals.open_autofilter(session, session.cur_col)
+        sqlite.ensure_indexed(session, function()
+          modals.open_autofilter(session, session.cur_col)
+        end)
       elseif mp.line >= 6 and session.visible_rows then
         local row_idx = mp.line - 5
         if row_idx >= 1 and row_idx <= #session.visible_rows then
           session.cur_row = session.top_row + row_idx - 1
           viewport.render(session)
-          local row_obj = session.visible_rows[row_idx]
-          if row_obj then
-            local c = session.cur_col
-            local old_val = row_obj.cells[c] or ""
-            vim.ui.input({
-              prompt = string.format("Edit Cell [%s%d] (%s): ", parser.col_to_excel(c), row_obj.rowid, session.headers[c]),
-              default = old_val,
-            }, function(new_val)
-              if new_val ~= nil and new_val ~= old_val then
-                sqlite.update_cell(session, row_obj.rowid, c, new_val, true)
-                viewport.render(session)
-              end
-            end)
-          end
         end
       end
     end
-  end, "Double-Click Header to Filter or Cell to Edit")
+  end, "Double-Click Header to Filter")
 
   -- 3. Excel AutoFilter, Quick Value Filter, Grep, Sort
   map("f", function()
@@ -539,31 +530,39 @@ local function attach_keymaps(session)
     viewport.render(session)
   end, "Auto-Fit Current Column Width")
 
-  -- 6. Cell Editing, Row Insert/Delete, Yank, Undo/Redo, Save
+  -- 6. Cell Editing, Row Insert/Delete, Yank, Undo/Redo/Cancel, Save
   local function edit_active_cell()
-    local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
-    if not row_obj then return end
-    local c = session.cur_col
-    local old_val = row_obj.cells[c] or ""
-    vim.ui.input({
-      prompt = string.format("Edit Cell [%s%d] (%s): ", parser.col_to_excel(c), row_obj.rowid, session.headers[c]),
-      default = old_val,
-    }, function(new_val)
-      if new_val ~= nil and new_val ~= old_val then
-        sqlite.update_cell(session, row_obj.rowid, c, new_val, true)
-        viewport.render(session)
-      end
-    end)
+    modals.open_cell_editor(session)
   end
 
+  map("i", edit_active_cell, "Edit Active Cell")
+  map("ce", edit_active_cell, "Edit Active Cell")
+  map("<F2>", edit_active_cell, "Edit Active Cell")
   map("<CR>", edit_active_cell, "Edit Active Cell")
-  map("e", edit_active_cell, "Edit Active Cell")
+
+  map("<Esc>", function()
+    if session._cell_edit_win and vim.api.nvim_win_is_valid(session._cell_edit_win) then
+      pcall(vim.api.nvim_win_close, session._cell_edit_win, true)
+      session._editing_cell = false
+      session._cell_edit_win = nil
+      return
+    end
+    if session.record_win and vim.api.nvim_win_is_valid(session.record_win) then
+      modals.toggle_record_card(session)
+      return
+    end
+    if session.undo_stack and #session.undo_stack > 0 then
+      local ok, msg = sqlite.undo(session)
+      viewport.render(session)
+      vim.notify("[SuperCsv] " .. msg, ok and vim.log.levels.INFO or vim.log.levels.WARN)
+    end
+  end, "Cancel Open Editor / Record Split / Last Accidental Edit")
 
   map("o", function()
     local new_id = sqlite.insert_row(session, {})
     session.cur_row = session.filtered_rows or session.total_rows or 1
     viewport.render(session)
-    vim.notify(string.format("[SuperCsv] Appended new blank row #%d", new_id))
+    vim.notify(string.format("[SuperCsv] Appended new blank row #%d (press 'u' or '<Esc>' to cancel)", new_id))
   end, "Insert New Row")
 
   map("dd", function()

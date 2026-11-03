@@ -824,6 +824,8 @@ end
 --- Insert a new row after rowid
 function M.insert_row(session, values)
   values = values or {}
+  local prev_row = session.cur_row or 1
+  local prev_top = session.top_row or 1
   local cols = {}
   local placeholders = {}
   local params = {}
@@ -854,11 +856,19 @@ function M.insert_row(session, values)
 
   table.insert(session.preview_rows, { rowid = new_rowid, cells = params })
   session.edit_count = (session.edit_count or 0) + 1
+  session.undo_stack = session.undo_stack or {}
+  table.insert(session.undo_stack, {
+    action = "insert_row",
+    rowid = new_rowid,
+    prev_row = prev_row,
+    prev_top = prev_top,
+  })
+  session.redo_stack = {}
   return new_rowid
 end
 
 --- Delete a row by rowid
-function M.delete_row(session, rowid)
+function M.delete_row(session, rowid, record_undo)
   if session.sqlite_ready and session.db then
     M.query(session.db, "DELETE FROM csv_data WHERE rowid = ?;", { rowid })
     session.total_rows = math.max(0, (session.total_rows or 1) - 1)
@@ -873,10 +883,12 @@ function M.delete_row(session, rowid)
       break
     end
   end
-  session.edit_count = (session.edit_count or 0) + 1
+  if record_undo ~= false then
+    session.edit_count = (session.edit_count or 0) + 1
+  end
 end
 
---- Undo last cell edit
+--- Undo last cell or row edit
 function M.undo(session)
   local stack = session.undo_stack or {}
   if #stack == 0 then
@@ -886,9 +898,18 @@ function M.undo(session)
   if item.action == "cell" then
     M.update_cell(session, item.rowid, item.col_idx, item.old_val, false)
     session.edit_count = math.max(0, (session.edit_count or 2) - 2)
+    if session.modified_cells and session.modified_cells[item.rowid] then
+      session.modified_cells[item.rowid][item.col_idx] = nil
+    end
     session.redo_stack = session.redo_stack or {}
     table.insert(session.redo_stack, item)
-    return true, string.format("Undid edit on Row %d, %s", item.rowid, session.headers[item.col_idx])
+    return true, string.format("Cancelled/undid edit on Row %d, %s", item.rowid, session.headers[item.col_idx])
+  elseif item.action == "insert_row" then
+    M.delete_row(session, item.rowid, false)
+    session.edit_count = math.max(0, (session.edit_count or 1) - 1)
+    if item.prev_row then session.cur_row = item.prev_row end
+    if item.prev_top then session.top_row = item.prev_top end
+    return true, string.format("Cancelled inserted row #%d and restored position", item.rowid)
   end
   return false, "Nothing to undo"
 end

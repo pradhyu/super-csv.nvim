@@ -33,6 +33,102 @@ local function create_float(title, width, height, enter)
   return buf, win
 end
 
+--- 0. Single-Instance Cancellable Cell Editor Modal (`i`, `ce`, `<CR>`)
+--- Prevents stacked/queued `vim.ui.input` popups and cancels immediately on a single `<Esc>`, `<C-c>`, or `q`!
+function M.open_cell_editor(session, row_obj, col_idx)
+  if not session then return end
+  if session._editing_cell or (session._cell_edit_win and vim.api.nvim_win_is_valid(session._cell_edit_win)) then
+    return
+  end
+
+  row_obj = row_obj or (session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1])
+  if not row_obj then return end
+  col_idx = col_idx or session.cur_col
+  local old_val = tostring(row_obj.cells[col_idx] or "")
+  local cname = session.headers[col_idx] or ("col_" .. col_idx)
+  local coord = string.format("%s%d", parser.col_to_excel(col_idx), row_obj.rowid or session.cur_row)
+
+  session._editing_cell = true
+
+  local width = math.min(math.max(54, #old_val + 16, #cname + 28), vim.o.columns - 8)
+  local row = math.max(1, math.floor((vim.o.lines - 3) / 2) - 1)
+  local col = math.max(1, math.floor((vim.o.columns - width) / 2))
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { old_val })
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = width,
+    height = 1,
+    style = "minimal",
+    border = "rounded",
+    title = string.format(" ✏️ Edit Cell [%s] %s ", coord, cname),
+    title_pos = "left",
+    footer = " [<CR>] Save   [<Esc> / <C-c> / q] Cancel ",
+    footer_pos = "right",
+  })
+  vim.wo[win].wrap = false
+  session._cell_edit_win = win
+  session._cell_edit_buf = buf
+
+  local closed = false
+  local function close_editor(cancelled)
+    if closed then return end
+    closed = true
+    session._editing_cell = false
+    session._cell_edit_win = nil
+    session._cell_edit_buf = nil
+    vim.cmd("stopinsert")
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+    if session.view_win and vim.api.nvim_win_is_valid(session.view_win) then
+      pcall(vim.api.nvim_set_current_win, session.view_win)
+    end
+    if cancelled then
+      vim.notify(string.format("[SuperCsv] Cancelled edit on [%s]", coord), vim.log.levels.INFO)
+    end
+  end
+
+  local function save_and_close()
+    if closed then return end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, 1, false)
+    local new_val = lines[1] or ""
+    close_editor(false)
+    if new_val ~= old_val then
+      sqlite.update_cell(session, row_obj.rowid, col_idx, new_val, true)
+      viewport.render(session)
+      vim.notify(string.format("[SuperCsv] Updated [%s] = %s (press 'u' to undo)", coord, vim.inspect(new_val)))
+    end
+  end
+
+  -- Instant single-key cancel in BOTH Insert and Normal mode!
+  for _, m in ipairs({ "i", "n", "v" }) do
+    vim.keymap.set(m, "<Esc>", function() close_editor(true) end, { buffer = buf, nowait = true, silent = true })
+    vim.keymap.set(m, "<C-c>", function() close_editor(true) end, { buffer = buf, nowait = true, silent = true })
+    vim.keymap.set(m, "<CR>", save_and_close, { buffer = buf, nowait = true, silent = true })
+  end
+  vim.keymap.set("n", "q", function() close_editor(true) end, { buffer = buf, nowait = true, silent = true })
+
+  vim.api.nvim_create_autocmd({ "BufLeave", "WinClosed" }, {
+    buffer = buf,
+    once = true,
+    callback = function()
+      close_editor(false)
+    end,
+  })
+
+  -- Place cursor at end of current value in Insert mode
+  pcall(vim.api.nvim_win_set_cursor, win, { 1, #old_val })
+  vim.cmd("startinsert!")
+end
+
 --- 1. Excel AutoFilter Modal (`f` on any column)
 function M.open_autofilter(session, col_idx)
   col_idx = col_idx or session.cur_col
@@ -457,7 +553,7 @@ function M.toggle_record_card(session)
 
   M.refresh_record_card(session)
 
-  -- Keymaps inside Vertical Record Card: <CR>/e edits that column's value!
+  -- Keymaps inside Vertical Record Card: <CR>/i edits that column's value, <Esc>/q/K closes split!
   local function edit_from_card()
     local line = vim.api.nvim_win_get_cursor(rwin)[1]
     local col_idx = line - 3
@@ -465,23 +561,17 @@ function M.toggle_record_card(session)
       session.cur_col = col_idx
       local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
       if row_obj then
-        local cur_val = row_obj.cells[col_idx] or ""
-        vim.ui.input({
-          prompt = string.format("Edit [%s%d] %s: ", parser.col_to_excel(col_idx), row_obj.rowid, session.headers[col_idx]),
-          default = cur_val,
-        }, function(new_val)
-          if new_val ~= nil and new_val ~= cur_val then
-            sqlite.update_cell(session, row_obj.rowid, col_idx, new_val, true)
-            viewport.render(session)
-          end
-        end)
+        M.open_cell_editor(session, row_obj, col_idx)
       end
     end
   end
 
   vim.keymap.set("n", "<CR>", edit_from_card, { buffer = rbuf, nowait = true })
-  vim.keymap.set("n", "e", edit_from_card, { buffer = rbuf, nowait = true })
+  vim.keymap.set("n", "i", edit_from_card, { buffer = rbuf, nowait = true })
   vim.keymap.set("n", "q", function()
+    M.toggle_record_card(session)
+  end, { buffer = rbuf, nowait = true })
+  vim.keymap.set("n", "<Esc>", function()
     M.toggle_record_card(session)
   end, { buffer = rbuf, nowait = true })
   vim.keymap.set("n", "K", function()
