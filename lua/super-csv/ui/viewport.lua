@@ -146,8 +146,11 @@ function M.render(session)
   end
   local win_width = (win and win ~= -1) and vim.api.nvim_win_get_width(win) or vim.o.columns
   local win_height = (win and win ~= -1) and vim.api.nvim_win_get_height(win) or (vim.o.lines - 4)
+  local has_winbar = (win and win ~= -1) and ((vim.wo[win].winbar or "") ~= "") or false
+  local usable_height = win_height - (has_winbar and 1 or 0)
+  local footer_lines = config.options.show_footer_stats and 3 or 2
 
-  local body_height = math.max(5, win_height - 8)
+  local body_height = math.max(3, usable_height - 5 - footer_lines)
   session.page_size = body_height
 
   -- Clamp cur_row & top_row
@@ -500,10 +503,19 @@ function M.render(session)
     })
   end
 
-  -- Position Neovim cursor on the active row line so statusline/screen stays anchored
-  if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() == win then
-    local target_buf_line = math.min(#lines, 5 + (session.cur_row - session.top_row))
-    pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, target_buf_line), 0 })
+  -- Position Neovim cursor on the active row line and lock topline=1 so header NEVER scrolls out of view
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].scrolloff = 0
+    vim.wo[win].sidescrolloff = 0
+    local target_buf_line = math.max(6, math.min(#lines - footer_lines, 6 + (session.cur_row - session.top_row)))
+    pcall(vim.api.nvim_win_call, win, function()
+      vim.fn.winrestview({
+        topline = 1,
+        leftcol = 0,
+        lnum = math.min(#lines, target_buf_line),
+        col = 0,
+      })
+    end)
   end
 
   -- If Vertical Record Card split is open, keep it synchronized!

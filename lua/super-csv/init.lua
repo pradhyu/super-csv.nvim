@@ -130,6 +130,41 @@ local function attach_keymaps(session)
     viewport.render(session)
   end, "Page Up")
 
+  map("<C-f>", function()
+    local pg = session.page_size or 30
+    local max_r = session.filtered_rows or session.total_rows or 1
+    session.cur_row = math.min(max_r, session.cur_row + pg)
+    session.top_row = math.min(math.max(1, max_r - pg + 1), session.top_row + pg)
+    viewport.render(session)
+  end, "Page Down (<C-f>)")
+
+  map("<C-b>", function()
+    local pg = session.page_size or 30
+    session.cur_row = math.max(1, session.cur_row - pg)
+    session.top_row = math.max(1, session.top_row - pg)
+    viewport.render(session)
+  end, "Page Up (<C-b>)")
+
+  map("<C-e>", function()
+    local max_r = session.filtered_rows or session.total_rows or 1
+    local step = vim.v.count1
+    session.top_row = math.min(math.max(1, max_r - (session.page_size or 30) + 1), session.top_row + step)
+    if session.cur_row < session.top_row then
+      session.cur_row = session.top_row
+    end
+    viewport.render(session)
+  end, "Scroll Viewport Down (<C-e>)")
+
+  map("<C-y>", function()
+    local step = vim.v.count1
+    session.top_row = math.max(1, session.top_row - step)
+    local bot_row = session.top_row + (session.page_size or 30) - 1
+    if session.cur_row > bot_row then
+      session.cur_row = bot_row
+    end
+    viewport.render(session)
+  end, "Scroll Viewport Up (<C-y>)")
+
   map("gg", function()
     local target = (vim.v.count > 0) and vim.v.count or 1
     local max_r = session.filtered_rows or session.total_rows or 1
@@ -173,6 +208,80 @@ local function attach_keymaps(session)
     session.top_row = math.max(1, session.top_row - 3)
     viewport.render(session)
   end, "Scroll Up")
+
+  map("<ScrollWheelRight>", function()
+    step_col(session, 2)
+  end, "Scroll Right Columns")
+
+  map("<ScrollWheelLeft>", function()
+    step_col(session, -2)
+  end, "Scroll Left Columns")
+
+  -- Mouse click to select cell or header column without moving topline
+  local function resolve_clicked_col(screen_col)
+    local x = 8 -- After "│  ROW #│"
+    for _, vc in ipairs(session.vis_cols or {}) do
+      local w = (session.col_widths[vc.col] or 14) + 3
+      if screen_col <= x + w then
+        return vc.col
+      end
+      x = x + w
+    end
+    if session.vis_cols and #session.vis_cols > 0 then
+      return session.vis_cols[#session.vis_cols].col
+    end
+    return session.cur_col
+  end
+
+  map("<LeftMouse>", function()
+    local mp = vim.fn.getmousepos()
+    if mp and mp.winid == session.view_win then
+      local clicked_col = resolve_clicked_col(mp.wincol)
+      if clicked_col then
+        session.cur_col = clicked_col
+      end
+      if mp.line >= 6 and session.visible_rows then
+        local row_idx = mp.line - 5
+        if row_idx >= 1 and row_idx <= #session.visible_rows then
+          session.cur_row = session.top_row + row_idx - 1
+        end
+      end
+      viewport.render(session)
+    end
+  end, "Select Cell / Column with Mouse")
+
+  map("<2-LeftMouse>", function()
+    local mp = vim.fn.getmousepos()
+    if mp and mp.winid == session.view_win then
+      local clicked_col = resolve_clicked_col(mp.wincol)
+      if clicked_col then
+        session.cur_col = clicked_col
+      end
+      if mp.line == 3 or mp.line == 4 then
+        modals.open_autofilter(session, session.cur_col)
+      elseif mp.line >= 6 and session.visible_rows then
+        local row_idx = mp.line - 5
+        if row_idx >= 1 and row_idx <= #session.visible_rows then
+          session.cur_row = session.top_row + row_idx - 1
+          viewport.render(session)
+          local row_obj = session.visible_rows[row_idx]
+          if row_obj then
+            local c = session.cur_col
+            local old_val = row_obj.cells[c] or ""
+            vim.ui.input({
+              prompt = string.format("Edit Cell [%s%d] (%s): ", parser.col_to_excel(c), row_obj.rowid, session.headers[c]),
+              default = old_val,
+            }, function(new_val)
+              if new_val ~= nil and new_val ~= old_val then
+                sqlite.update_cell(session, row_obj.rowid, c, new_val, true)
+                viewport.render(session)
+              end
+            end)
+          end
+        end
+      end
+    end
+  end, "Double-Click Header to Filter or Cell to Edit")
 
   -- 3. Excel AutoFilter, Quick Value Filter, Grep, Sort
   map("f", function()
@@ -480,6 +589,11 @@ function M.open(filepath)
   if existing and existing.view_buf and vim.api.nvim_buf_is_valid(existing.view_buf) then
     vim.api.nvim_win_set_buf(0, existing.view_buf)
     existing.view_win = vim.api.nvim_get_current_win()
+    vim.b[existing.view_buf].snacks_scroll = false
+    vim.wo[existing.view_win].scrolloff = 0
+    vim.wo[existing.view_win].sidescrolloff = 0
+    attach_keymaps(existing)
+    M.attach_buf_autocmds(existing)
     viewport.render(existing)
     return existing
   end
@@ -497,6 +611,7 @@ function M.open(filepath)
   vim.bo[view_buf].swapfile = false
   vim.bo[view_buf].modifiable = false
   vim.bo[view_buf].filetype = "supercsv"
+  vim.b[view_buf].snacks_scroll = false
 
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, view_buf)
@@ -506,6 +621,8 @@ function M.open(filepath)
   vim.wo[win].signcolumn = "no"
   vim.wo[win].statuscolumn = ""
   vim.wo[win].cursorline = false
+  vim.wo[win].scrolloff = 0
+  vim.wo[win].sidescrolloff = 0
 
   local pinned_cols = {}
   for c = 1, math.min(config.options.freeze_cols or 1, slice.num_cols) do
@@ -545,29 +662,7 @@ function M.open(filepath)
   M.sessions_by_path[filepath] = session
 
   attach_keymaps(session)
-
-  -- Support `:w` on the virtual viewport buffer
-  vim.api.nvim_create_autocmd("BufWriteCmd", {
-    buffer = view_buf,
-    callback = function()
-      local ok, save_err = sqlite.save_to_csv(session, session.filepath, false)
-      viewport.render(session)
-      if ok then
-        vim.notify(string.format("[SuperCsv] Saved %s", short_name))
-      else
-        vim.notify("[SuperCsv Save Error] " .. tostring(save_err), vim.log.levels.ERROR)
-      end
-    end,
-  })
-
-  -- Re-render automatically on window resize
-  vim.api.nvim_create_autocmd({ "WinResized", "VimResized", "BufWinEnter" }, {
-    buffer = view_buf,
-    callback = function()
-      session.view_win = vim.fn.bufwinid(view_buf)
-      viewport.render(session)
-    end,
-  })
+  M.attach_buf_autocmds(session)
 
   -- Render Stage 1 immediately (< 15ms)
   viewport.render(session)
@@ -582,6 +677,62 @@ function M.open(filepath)
   end
 
   return session
+end
+
+function M.attach_buf_autocmds(session)
+  local view_buf = session.view_buf
+  local short_name = vim.fn.fnamemodify(session.filepath, ":t")
+  local grp = vim.api.nvim_create_augroup("SuperCsvBuf_" .. view_buf, { clear = true })
+
+  -- Support `:w` on the virtual viewport buffer
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    group = grp,
+    buffer = view_buf,
+    callback = function()
+      local ok, save_err = sqlite.save_to_csv(session, session.filepath, false)
+      viewport.render(session)
+      if ok then
+        vim.notify(string.format("[SuperCsv] Saved %s", short_name))
+      else
+        vim.notify("[SuperCsv Save Error] " .. tostring(save_err), vim.log.levels.ERROR)
+      end
+    end,
+  })
+
+  -- Re-render automatically on window resize, and clamp topline=1 on any WinScrolled
+  vim.api.nvim_create_autocmd({ "WinResized", "VimResized", "BufWinEnter" }, {
+    group = grp,
+    buffer = view_buf,
+    callback = function()
+      session.view_win = vim.fn.bufwinid(view_buf)
+      viewport.render(session)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("WinScrolled", {
+    group = grp,
+    buffer = view_buf,
+    callback = function()
+      if session._rendering then return end
+      local w = session.view_win
+      if w and vim.api.nvim_win_is_valid(w) then
+        vim.api.nvim_win_call(w, function()
+          local v = vim.fn.winsaveview()
+          if v.topline and v.topline > 1 then
+            local delta = v.topline - 1
+            local max_r = session.filtered_rows or session.total_rows or 1
+            session.top_row = math.min(math.max(1, max_r - (session.page_size or 30) + 1), session.top_row + delta)
+            session.cur_row = math.max(session.top_row, math.min(max_r, session.cur_row + delta))
+            session._rendering = true
+            viewport.render(session)
+            session._rendering = false
+          elseif v.leftcol and v.leftcol > 0 then
+            vim.fn.winrestview({ topline = 1, leftcol = 0 })
+          end
+        end)
+      end
+    end,
+  })
 end
 
 --- Dispatch `:SuperCsv <subcommand>`
@@ -693,8 +844,47 @@ function M.setup(opts)
     end,
   })
 
+  -- Global mouse-wheel hover support: scrolling over a SuperCsv window (even when another split/terminal is focused)
+  -- scrolls the virtual rows while keeping the Excel header frozen at topline=1
+  for _, mode in ipairs({ "n", "i", "v", "t" }) do
+    vim.keymap.set(mode, "<ScrollWheelDown>", function()
+      local mp = vim.fn.getmousepos()
+      if mp and mp.winid and mp.winid > 0 and vim.api.nvim_win_is_valid(mp.winid) then
+        local b = vim.api.nvim_win_get_buf(mp.winid)
+        local s = M.sessions_by_buf[b]
+        if s then
+          s.view_win = mp.winid
+          local max_r = s.filtered_rows or s.total_rows or 1
+          s.cur_row = math.min(max_r, s.cur_row + 3)
+          s.top_row = math.min(math.max(1, max_r - (s.page_size or 30) + 1), s.top_row + 3)
+          viewport.render(s)
+          return
+        end
+      end
+      local key = vim.api.nvim_replace_termcodes("<ScrollWheelDown>", true, false, true)
+      vim.api.nvim_feedkeys(key, "n", false)
+    end, { silent = true, desc = "SuperCsv: Hover Scroll Down" })
+
+    vim.keymap.set(mode, "<ScrollWheelUp>", function()
+      local mp = vim.fn.getmousepos()
+      if mp and mp.winid and mp.winid > 0 and vim.api.nvim_win_is_valid(mp.winid) then
+        local b = vim.api.nvim_win_get_buf(mp.winid)
+        local s = M.sessions_by_buf[b]
+        if s then
+          s.view_win = mp.winid
+          s.cur_row = math.max(1, s.cur_row - 3)
+          s.top_row = math.max(1, s.top_row - 3)
+          viewport.render(s)
+          return
+        end
+      end
+      local key = vim.api.nvim_replace_termcodes("<ScrollWheelUp>", true, false, true)
+      vim.api.nvim_feedkeys(key, "n", false)
+    end, { silent = true, desc = "SuperCsv: Hover Scroll Up" })
+  end
+
   if config.options.auto_open then
-    vim.api.nvim_create_autocmd("BufReadPost", {
+    vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
       group = augroup,
       pattern = { "*.csv", "*.tsv" },
       callback = function(ev)
