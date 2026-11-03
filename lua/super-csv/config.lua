@@ -1,12 +1,13 @@
 local M = {}
 
 M.defaults = {
+  enabled = true,            -- Master switch for super-csv
   auto_open = true,          -- Automatically open Excel 2D viewport on .csv/.tsv files
   freeze_cols = 1,           -- Number of left-most columns frozen by default (like Excel Freeze Panes)
   min_col_width = 10,        -- Minimum column display width
   max_col_width = 28,        -- Maximum column display width before truncation with …
   zebra_columns = true,      -- Alternating background colors for even/odd columns
-  zebra_rows = false,        -- Optional alternating row striping
+  zebra_rows = true,         -- Alternating background colors for even/odd rows (Excel banded rows)
   show_footer_stats = true,  -- Show Excel-style COUNT / SUM / AVG / MIN / MAX bar at bottom
   heatmap = false,           -- Conditional numeric heatmap coloring (toggle with gm)
   sqlite_backend = true,     -- Back CSV with SQLite + LuaJIT FFI for 1M-row speed

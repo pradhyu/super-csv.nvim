@@ -395,10 +395,12 @@ function M.render(session)
         local cell_str = " " .. fit_width(disp_val, w, align_right) .. " "
 
         -- Determine highlight group with Excel priority:
-        -- Active Cell > Modified Cell > Grep Match > Heatmap > Active Row > Pinned Col > Alternating Even/Odd Col
+        -- Active Cell > Modified Cell > Grep Match > Heatmap > Active Row > Pinned Col > Alternating Row/Col
         local cell_hl
         local is_mod = session.modified_cells and session.modified_cells[row_obj.rowid] and session.modified_cells[row_obj.rowid][c] ~= nil
         local is_grep_match = (session.grep_pattern and session.grep_pattern ~= "" and raw_val:lower():find(session.grep_pattern:lower(), 1, true) ~= nil)
+        local is_even_row = (r_offset % 2 == 0)
+        local is_even_col = (idx % 2 == 0)
 
         if is_cur_cell then
           cell_hl = "SuperCsvCursorCell"
@@ -415,9 +417,21 @@ function M.render(session)
         elseif is_cur_row then
           cell_hl = "SuperCsvCursorRow"
         elseif vc.pinned then
-          cell_hl = "SuperCsvColPinned"
+          if config.options.zebra_rows then
+            cell_hl = is_even_row and "SuperCsvColPinnedEven" or "SuperCsvColPinnedOdd"
+          else
+            cell_hl = "SuperCsvColPinned"
+          end
+        elseif config.options.zebra_rows and config.options.zebra_columns then
+          if is_even_row then
+            cell_hl = is_even_col and "SuperCsvRowEvenColEven" or "SuperCsvRowEvenColOdd"
+          else
+            cell_hl = is_even_col and "SuperCsvRowOddColEven" or "SuperCsvRowOddColOdd"
+          end
+        elseif config.options.zebra_rows then
+          cell_hl = is_even_row and "SuperCsvRowEvenColOdd" or "SuperCsvRowOddColOdd"
         elseif config.options.zebra_columns then
-          cell_hl = (idx % 2 == 1) and "SuperCsvColOdd" or "SuperCsvColEven"
+          cell_hl = is_even_col and "SuperCsvColEven" or "SuperCsvColOdd"
         else
           cell_hl = "SuperCsvColOdd"
         end
@@ -479,7 +493,7 @@ function M.render(session)
   -- 5. Active Cell Inspector & Quick Keys Bar
   local cell_coord = string.format("%s%d", parser.col_to_excel(session.cur_col), active_rowid > 0 and active_rowid or session.cur_row)
   local inspector_line = string.format(
-    " [%s] %s = %s │ [f]Filter [fv]Filter=Cell [gv]Counts [g/]Grep [s/S]Sort [gp]Pin [K]Record [<CR>]Edit [gq]SQL ",
+    " [%s] %s = %s │ [f]Filter [gv]Counts [g/]Grep [s/S]Sort [gp]Pin [gr]ZebraRows [<leader>cv]NormalCSV ",
     cell_coord,
     session.headers[session.cur_col] or "",
     active_cell_raw == "" and "NULL" or vim.inspect(active_cell_raw)

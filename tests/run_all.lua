@@ -132,6 +132,35 @@ local card_lines = vim.api.nvim_buf_get_lines(s_wide.record_buf, 0, -1, false)
 assert_eq(#card_lines, 103, "Record card displays 3 header lines + all 100 columns")
 modals.toggle_record_card(s_wide)
 
+-- 10. Test Alternating Row Colors (zebra_rows) & Toggle to Normal CSV Mode
+local cfg = require("super-csv.config")
+assert_eq(cfg.options.zebra_rows, true, "zebra_rows enabled by default")
+super_csv.command("zebra_rows")
+assert_eq(cfg.options.zebra_rows, false, "zebra_rows toggled off")
+super_csv.command("zebra_rows")
+assert_eq(cfg.options.zebra_rows, true, "zebra_rows toggled back on")
+
+-- Test switching to normal raw CSV buffer and back
+super_csv.command("toggle")
+assert_true(super_csv.disabled_paths[wide_path] == true, "toggle switched wide_100_columns.csv to normal raw mode")
+assert_true(vim.api.nvim_buf_get_name(0) == wide_path, "Current buffer is the raw CSV file")
+super_csv.command("toggle")
+assert_true(super_csv.disabled_paths[wide_path] == nil, "second toggle returned to SuperCsv 2D viewport")
+assert_eq(vim.bo.filetype, "supercsv", "Buffer filetype is supercsv again")
+
+-- 11. Test 1,000,000-row x 100-column CSV initial slice open (< 35ms)
+local million_path = "/home/pkshrestha/git/super-csv.nvim/examples/million_100cols.csv"
+if vim.fn.filereadable(million_path) == 1 then
+  local t0 = vim.uv.hrtime()
+  local slice = parser.read_initial_slice(million_path, 250)
+  local elapsed_ms = (vim.uv.hrtime() - t0) / 1e6
+  assert_true(slice ~= nil, "1M x 100 CSV initial slice parsed")
+  assert_eq(slice.num_cols, 100, "1M x 100 CSV has 100 columns")
+  assert_true(#slice.preview_rows >= 200, "1M x 100 CSV preview slice has >= 200 rows")
+  assert_true(elapsed_ms < 100, string.format("1M x 100 initial slice took %.2f ms", elapsed_ms))
+  print(string.format("[BENCH] 1,000,000-row x 100-col initial slice read: %.2f ms", elapsed_ms))
+end
+
 print(string.format("\n=== SuperCsv Tests: %d passed, %d failed ===", passed, failed))
 if failed > 0 then
   vim.cmd("cquit 1")

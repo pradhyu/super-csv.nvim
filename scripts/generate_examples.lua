@@ -347,8 +347,50 @@ end
 -- Optional: --million flag generates examples/million_100cols.csv (1,000,000 rows x 100 columns)
 for _, a in ipairs(arg or {}) do
   if a == "--million" then
-    print("[INFO] Generating examples/million_100cols.csv (1,000,000 rows x 100 columns)...")
-    write_csv(examples_dir .. "/million_100cols.csv", wide_headers, make_100_col_row, 1000000)
+    local out_path = examples_dir .. "/million_100cols.csv"
+    print("[INFO] Generating " .. out_path .. " (1,000,000 rows x 100 columns)...")
+    local f = assert(io.open(out_path, "wb"))
+    f:write(table.concat(wide_headers, ",") .. "\n")
+
+    -- Precompute 64 distinct metric suffixes (cols 11..99) for fast assembly
+    local suffixes = {}
+    for s = 1, 64 do
+      local m = {}
+      for c = 11, 99 do
+        local v = ((s * 31 + c * 17) % 10000) / 10.0
+        m[#m + 1] = string.format("%.1f", v)
+      end
+      suffixes[s] = table.concat(m, ",")
+    end
+
+    local batch = {}
+    local b_idx = 0
+    for r = 1, 1000000 do
+      local mrr = 250 + (r * 73) % 24750
+      local tenant = wide_tenants[(r % #wide_tenants) + 1]
+      local reg = wide_regions[(r % #wide_regions) + 1]
+      local tier = wide_tiers[(r % #wide_tiers) + 1]
+      local act = (r % 7 ~= 0) and "true" or "false"
+      local hs = 50 + (r * 17) % 50
+      local mo = (r % 12) + 1
+      local dy = (r % 28) + 1
+      local suf = suffixes[(r % 64) + 1]
+      b_idx = b_idx + 1
+      batch[b_idx] = string.format(
+        "%d,ACC-%07d,%s-%03d,%s,%s,%s,%d.00,%d.00,%d,2026-%02d-%02d,%s,chk_%08x",
+        r, r, tenant, r % 100, reg, tier, act, mrr, mrr * 12, hs, mo, dy, suf, (r * 1103515245 + 12345) % 0x7fffffff
+      )
+      if b_idx >= 5000 then
+        f:write(table.concat(batch, "\n") .. "\n")
+        batch = {}
+        b_idx = 0
+      end
+    end
+    if b_idx > 0 then
+      f:write(table.concat(batch, "\n") .. "\n")
+    end
+    f:close()
+    print("[OK] Wrote " .. out_path .. " (1,000,000 rows x 100 cols)")
   elseif a == "--10k" then
     write_csv(examples_dir .. "/large_10k_100cols.csv", wide_headers, make_100_col_row, 10000)
   end

@@ -10,6 +10,7 @@ local modals = require("super-csv.ui.modals")
 -- Map of view_buf -> session and filepath -> session
 M.sessions_by_buf = {}
 M.sessions_by_path = {}
+M.disabled_paths = {} -- Tracks files toggled back to normal raw CSV mode
 
 function M.get_active_session()
   local cur_buf = vim.api.nvim_get_current_buf()
@@ -445,6 +446,22 @@ local function attach_keymaps(session)
     vim.notify("[SuperCsv] Numeric Heatmap: " .. (config.options.heatmap and "ON" or "OFF"))
   end, "Toggle Numeric Heatmap")
 
+  map("gr", function()
+    config.options.zebra_rows = not config.options.zebra_rows
+    viewport.render(session)
+    vim.notify("[SuperCsv] Alternating Row Colors (Zebra Rows): " .. (config.options.zebra_rows and "ON" or "OFF"))
+  end, "Toggle Alternating Row Colors")
+
+  map("gz", function()
+    config.options.zebra_columns = not config.options.zebra_columns
+    viewport.render(session)
+    vim.notify("[SuperCsv] Alternating Column Colors (Zebra Cols): " .. (config.options.zebra_columns and "ON" or "OFF"))
+  end, "Toggle Alternating Column Colors")
+
+  map("<leader>cv", function()
+    M.switch_to_normal_csv(session)
+  end, "Switch Back to Normal Raw CSV Buffer")
+
   map("+", function()
     local c = session.cur_col
     session.col_widths[c] = math.min(80, (session.col_widths[c] or 14) + 4)
@@ -575,6 +592,50 @@ function M.apply_filter_expr(session, col_idx, expr)
   viewport.render(session)
 end
 
+--- Switch from the SuperCsv 2D Excel Viewport back to the normal raw CSV buffer
+function M.switch_to_normal_csv(session)
+  session = session or M.get_active_session()
+  if not session then
+    return
+  end
+  local filepath = session.filepath
+  M.disabled_paths[filepath] = true
+
+  if session.record_win and vim.api.nvim_win_is_valid(session.record_win) then
+    pcall(vim.api.nvim_win_close, session.record_win, true)
+    session.record_win = nil
+  end
+
+  local win = vim.api.nvim_get_current_win()
+  -- Find or load the raw file buffer
+  local raw_buf = vim.fn.bufnr(filepath)
+  if raw_buf == -1 or raw_buf == session.view_buf then
+    vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+    raw_buf = vim.api.nvim_get_current_buf()
+  else
+    vim.api.nvim_win_set_buf(win, raw_buf)
+    if vim.api.nvim_buf_line_count(raw_buf) <= 1 and vim.api.nvim_buf_get_lines(raw_buf, 0, 1, false)[1] == "" then
+      vim.cmd("edit! " .. vim.fn.fnameescape(filepath))
+    end
+  end
+
+  vim.wo[win].number = true
+  vim.wo[win].cursorline = true
+  vim.wo[win].scrolloff = 4
+
+  -- Jump to the current row in the normal raw CSV buffer (+1 for header line)
+  local target_line = math.min(vim.api.nvim_buf_line_count(raw_buf), (session.cur_row or 1) + 1)
+  pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, target_line), 0 })
+
+  -- Bind <leader>cv in the raw buffer so pressing it again returns to SuperCsv!
+  vim.keymap.set("n", "<leader>cv", function()
+    M.disabled_paths[filepath] = nil
+    M.open(filepath)
+  end, { buffer = raw_buf, silent = true, desc = "SuperCsv: Open 2D Excel Viewport" })
+
+  vim.notify("[SuperCsv] Switched to normal raw CSV view (press <leader>cv or :SuperCsv toggle to re-enable)")
+end
+
 --- Open a CSV file in the 2D Excel Virtual Viewport
 function M.open(filepath)
   highlights.setup()
@@ -583,6 +644,7 @@ function M.open(filepath)
     vim.notify("[SuperCsv] File is not readable: " .. tostring(filepath), vim.log.levels.WARN)
     return nil
   end
+  M.disabled_paths[filepath] = nil
 
   -- Reuse existing session if already open
   local existing = M.sessions_by_path[filepath]
@@ -741,14 +803,40 @@ function M.command(args)
   local sub = parts[1] or "open"
   local rest = table.concat(parts, " ", 2)
 
-  if sub == "open" or sub == "toggle" then
-    local s = M.get_active_session()
-    if s and vim.api.nvim_get_current_buf() == s.view_buf and sub == "toggle" then
-      vim.cmd("edit " .. vim.fn.fnameescape(s.filepath))
-      return
-    end
+  if sub == "open" then
+    config.options.enabled = true
     local target = (rest ~= "") and rest or vim.api.nvim_buf_get_name(0)
     M.open(target)
+    return
+  elseif sub == "toggle" then
+    local cur_buf = vim.api.nvim_get_current_buf()
+    local s_by_buf = M.sessions_by_buf[cur_buf]
+    if s_by_buf then
+      M.switch_to_normal_csv(s_by_buf)
+    else
+      config.options.enabled = true
+      local target = (rest ~= "") and rest or vim.api.nvim_buf_get_name(0)
+      M.open(target)
+    end
+    return
+  elseif sub == "disable" or sub == "off" then
+    config.options.enabled = false
+    local s = M.get_active_session()
+    if s then
+      M.switch_to_normal_csv(s)
+    else
+      vim.notify("[SuperCsv] Disabled")
+    end
+    return
+  elseif sub == "enable" or sub == "on" then
+    config.options.enabled = true
+    M.disabled_paths = {}
+    local target = (rest ~= "") and rest or vim.api.nvim_buf_get_name(0)
+    if target ~= "" and (target:match("%.csv$") or target:match("%.tsv$")) then
+      M.open(target)
+    else
+      vim.notify("[SuperCsv] Enabled")
+    end
     return
   end
 
@@ -817,6 +905,14 @@ function M.command(args)
   elseif sub == "heatmap" then
     config.options.heatmap = not config.options.heatmap
     viewport.render(session)
+  elseif sub == "zebra_rows" or sub == "zebra" then
+    config.options.zebra_rows = not config.options.zebra_rows
+    viewport.render(session)
+    vim.notify("[SuperCsv] Alternating Row Colors: " .. (config.options.zebra_rows and "ON" or "OFF"))
+  elseif sub == "zebra_cols" then
+    config.options.zebra_columns = not config.options.zebra_columns
+    viewport.render(session)
+    vim.notify("[SuperCsv] Alternating Column Colors: " .. (config.options.zebra_columns and "ON" or "OFF"))
   elseif sub == "save" then
     sqlite.save_to_csv(session, session.filepath, false)
     viewport.render(session)
@@ -884,18 +980,54 @@ function M.setup(opts)
   end
 
   if config.options.auto_open then
+    -- Intercept huge CSVs (> 20MB, e.g. 598MB 1,000,000-row million_100cols.csv) via BufReadCmd
+    -- so Neovim NEVER blocks trying to load 600MB into a raw text buffer!
+    vim.api.nvim_create_autocmd("BufReadCmd", {
+      group = augroup,
+      pattern = { "*million*.csv", "*large*.csv" },
+      callback = function(ev)
+        local path = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(ev.buf), ":p")
+        if config.options.enabled and path ~= "" and not M.disabled_paths[path] then
+          M.open(path)
+        else
+          vim.cmd("noautocmd edit " .. vim.fn.fnameescape(path))
+        end
+      end,
+    })
+
+    vim.api.nvim_create_autocmd("BufReadPre", {
+      group = augroup,
+      pattern = { "*.csv", "*.tsv" },
+      callback = function(ev)
+        if not config.options.enabled then return end
+        local path = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(ev.buf), ":p")
+        if path ~= "" and not M.disabled_paths[path] then
+          local st = (vim.uv or vim.loop).fs_stat(path)
+          if st and st.size > 10 * 1024 * 1024 then
+            vim.bo[ev.buf].swapfile = false
+            vim.bo[ev.buf].undofile = false
+            vim.bo[ev.buf].bufhidden = "wipe"
+          end
+        end
+      end,
+    })
+
     vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
       group = augroup,
       pattern = { "*.csv", "*.tsv" },
       callback = function(ev)
-        local path = vim.api.nvim_buf_get_name(ev.buf)
-        if path ~= "" and not path:match("^supercsv://") then
-          vim.schedule(function()
-            if vim.api.nvim_buf_is_valid(ev.buf) and vim.api.nvim_get_current_buf() == ev.buf then
-              M.open(path)
-            end
-          end)
+        if not config.options.enabled then return end
+        local raw_name = vim.api.nvim_buf_get_name(ev.buf)
+        if raw_name == "" or raw_name:match("^supercsv://") then return end
+        local path = vim.fn.fnamemodify(raw_name, ":p")
+        if M.disabled_paths[path] then
+          return
         end
+        vim.schedule(function()
+          if config.options.enabled and not M.disabled_paths[path] and vim.api.nvim_buf_is_valid(ev.buf) and vim.api.nvim_get_current_buf() == ev.buf then
+            M.open(path)
+          end
+        end)
       end,
     })
   end

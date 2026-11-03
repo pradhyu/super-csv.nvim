@@ -6,6 +6,10 @@ vim.g.loaded_super_csv = true
 local subcommands = {
   "open",
   "toggle",
+  "disable",
+  "enable",
+  "zebra_rows",
+  "zebra_cols",
   "filter",
   "filter_val",
   "filter_clear",
