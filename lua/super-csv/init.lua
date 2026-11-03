@@ -1,0 +1,714 @@
+local M = {}
+
+local config = require("super-csv.config")
+local highlights = require("super-csv.highlights")
+local parser = require("super-csv.engine.parser")
+local sqlite = require("super-csv.engine.sqlite")
+local viewport = require("super-csv.ui.viewport")
+local modals = require("super-csv.ui.modals")
+
+-- Map of view_buf -> session and filepath -> session
+M.sessions_by_buf = {}
+M.sessions_by_path = {}
+
+function M.get_active_session()
+  local cur_buf = vim.api.nvim_get_current_buf()
+  if M.sessions_by_buf[cur_buf] then
+    return M.sessions_by_buf[cur_buf]
+  end
+  local path = vim.api.nvim_buf_get_name(cur_buf)
+  if path ~= "" and M.sessions_by_path[path] then
+    return M.sessions_by_path[path]
+  end
+  return nil
+end
+
+--- Move active column left or right, skipping hidden columns
+local function step_col(session, delta)
+  local c = session.cur_col
+  local target = c + delta
+  while target >= 1 and target <= session.num_cols and session.hidden_cols[target] do
+    target = target + (delta > 0 and 1 or -1)
+  end
+  if target >= 1 and target <= session.num_cols then
+    session.cur_col = target
+  end
+  viewport.render(session)
+end
+
+--- Bind all spreadsheet navigation, filter, grep, analytics, and editor keymaps on view_buf
+local function attach_keymaps(session)
+  local buf = session.view_buf
+  local function map(lhs, rhs, desc)
+    vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true, desc = "SuperCsv: " .. desc })
+  end
+
+  -- 1. Horizontal Column Navigation (across 100+ columns)
+  map("l", function() step_col(session, 1) end, "Next Column")
+  map("<Right>", function() step_col(session, 1) end, "Next Column")
+  map("<Tab>", function() step_col(session, 1) end, "Next Column")
+  map("h", function() step_col(session, -1) end, "Previous Column")
+  map("<Left>", function() step_col(session, -1) end, "Previous Column")
+  map("<S-Tab>", function() step_col(session, -1) end, "Previous Column")
+
+  map("L", function()
+    local jump = math.max(3, #(session.vis_cols or {}) - 2)
+    session.cur_col = math.min(session.num_cols, session.cur_col + jump)
+    session.left_col = math.min(session.num_cols, session.left_col + jump)
+    viewport.render(session)
+  end, "Page Right Columns")
+
+  map("H", function()
+    local jump = math.max(3, #(session.vis_cols or {}) - 2)
+    session.cur_col = math.max(1, session.cur_col - jump)
+    session.left_col = math.max(1, session.left_col - jump)
+    viewport.render(session)
+  end, "Page Left Columns")
+
+  map("0", function()
+    session.cur_col = 1
+    session.left_col = 1
+    viewport.render(session)
+  end, "First Column (A #1)")
+
+  map("$", function()
+    session.cur_col = session.num_cols
+    viewport.render(session)
+  end, "Last Column")
+
+  -- 2. Vertical Row Navigation (across 1,000,000+ rows)
+  map("j", function()
+    local count = vim.v.count1
+    local max_r = session.filtered_rows or session.total_rows or 1
+    session.cur_row = math.min(max_r, session.cur_row + count)
+    viewport.render(session)
+  end, "Next Row")
+
+  map("<Down>", function()
+    local max_r = session.filtered_rows or session.total_rows or 1
+    session.cur_row = math.min(max_r, session.cur_row + vim.v.count1)
+    viewport.render(session)
+  end, "Next Row")
+
+  map("k", function()
+    session.cur_row = math.max(1, session.cur_row - vim.v.count1)
+    viewport.render(session)
+  end, "Previous Row")
+
+  map("<Up>", function()
+    session.cur_row = math.max(1, session.cur_row - vim.v.count1)
+    viewport.render(session)
+  end, "Previous Row")
+
+  map("<C-d>", function()
+    local half = math.max(5, math.floor((session.page_size or 30) / 2))
+    local max_r = session.filtered_rows or session.total_rows or 1
+    session.cur_row = math.min(max_r, session.cur_row + half)
+    session.top_row = math.min(math.max(1, max_r - (session.page_size or 30) + 1), session.top_row + half)
+    viewport.render(session)
+  end, "Half-Page Down")
+
+  map("<C-u>", function()
+    local half = math.max(5, math.floor((session.page_size or 30) / 2))
+    session.cur_row = math.max(1, session.cur_row - half)
+    session.top_row = math.max(1, session.top_row - half)
+    viewport.render(session)
+  end, "Half-Page Up")
+
+  map("<PageDown>", function()
+    local pg = session.page_size or 30
+    local max_r = session.filtered_rows or session.total_rows or 1
+    session.cur_row = math.min(max_r, session.cur_row + pg)
+    session.top_row = math.min(math.max(1, max_r - pg + 1), session.top_row + pg)
+    viewport.render(session)
+  end, "Page Down")
+
+  map("<PageUp>", function()
+    local pg = session.page_size or 30
+    session.cur_row = math.max(1, session.cur_row - pg)
+    session.top_row = math.max(1, session.top_row - pg)
+    viewport.render(session)
+  end, "Page Up")
+
+  map("gg", function()
+    local target = (vim.v.count > 0) and vim.v.count or 1
+    local max_r = session.filtered_rows or session.total_rows or 1
+    session.cur_row = math.max(1, math.min(max_r, target))
+    session.top_row = session.cur_row
+    viewport.render(session)
+  end, "First Row (or [count]gg)")
+
+  map("G", function()
+    local max_r = session.filtered_rows or session.total_rows or 1
+    if vim.v.count > 0 then
+      session.cur_row = math.max(1, math.min(max_r, vim.v.count))
+    else
+      session.cur_row = max_r
+    end
+    viewport.render(session)
+  end, "Last Row (or [count]G)")
+
+  map("gG", function()
+    vim.ui.input({ prompt = string.format("Go to Row (1 .. %d): ", session.filtered_rows or session.total_rows or 1) }, function(inp)
+      local n = tonumber(inp)
+      if n then
+        local max_r = session.filtered_rows or session.total_rows or 1
+        session.cur_row = math.max(1, math.min(max_r, math.floor(n)))
+        session.top_row = math.max(1, session.cur_row - 5)
+        viewport.render(session)
+      end
+    end)
+  end, "Prompt Go to Row Number")
+
+  -- Mouse scroll support
+  map("<ScrollWheelDown>", function()
+    local max_r = session.filtered_rows or session.total_rows or 1
+    session.cur_row = math.min(max_r, session.cur_row + 3)
+    session.top_row = math.min(math.max(1, max_r - (session.page_size or 30) + 1), session.top_row + 3)
+    viewport.render(session)
+  end, "Scroll Down")
+
+  map("<ScrollWheelUp>", function()
+    session.cur_row = math.max(1, session.cur_row - 3)
+    session.top_row = math.max(1, session.top_row - 3)
+    viewport.render(session)
+  end, "Scroll Up")
+
+  -- 3. Excel AutoFilter, Quick Value Filter, Grep, Sort
+  map("f", function()
+    modals.open_autofilter(session, session.cur_col)
+  end, "Open Excel AutoFilter for Current Column")
+
+  map("fv", function()
+    local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
+    if row_obj then
+      local val = row_obj.cells[session.cur_col] or ""
+      session.filters[session.cur_col] = { values = { [val] = true } }
+      session.cached_where_sig = nil
+      session.cur_row = 1
+      session.top_row = 1
+      viewport.render(session)
+      vim.notify(string.format("[SuperCsv] Filtered %s == %s", session.headers[session.cur_col], vim.inspect(val)))
+    end
+  end, "Filter Column == Active Cell Value")
+
+  map("fx", function()
+    local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
+    if row_obj then
+      local val = row_obj.cells[session.cur_col] or ""
+      session.filters[session.cur_col] = { op = "!=", val = val }
+      session.cached_where_sig = nil
+      session.cur_row = 1
+      session.top_row = 1
+      viewport.render(session)
+      vim.notify(string.format("[SuperCsv] Excluded %s != %s", session.headers[session.cur_col], vim.inspect(val)))
+    end
+  end, "Exclude Active Cell Value")
+
+  map("F", function()
+    if session.filters[session.cur_col] then
+      session.filters[session.cur_col] = nil
+      session.cached_where_sig = nil
+      session.cur_row = 1
+      session.top_row = 1
+      viewport.render(session)
+      vim.notify(string.format("[SuperCsv] Cleared filter on %s", session.headers[session.cur_col]))
+    else
+      session.filters = {}
+      session.grep_pattern = nil
+      session.cached_where_sig = nil
+      session.cur_row = 1
+      session.top_row = 1
+      viewport.render(session)
+      vim.notify("[SuperCsv] Cleared all filters and grep")
+    end
+  end, "Clear Column Filter (or All Filters)")
+
+  map("<leader>cF", function()
+    session.filters = {}
+    session.grep_pattern = nil
+    session.cached_where_sig = nil
+    session.cur_row = 1
+    session.top_row = 1
+    viewport.render(session)
+    vim.notify("[SuperCsv] All filters and grep cleared")
+  end, "Clear All Filters")
+
+  map("g/", function()
+    vim.ui.input({
+      prompt = "SuperCsv Grep Across All Columns (empty to clear): ",
+      default = session.grep_pattern or "",
+    }, function(inp)
+      if inp ~= nil then
+        session.grep_pattern = vim.trim(inp)
+        session.cached_where_sig = nil
+        session.cur_row = 1
+        session.top_row = 1
+        viewport.render(session)
+      end
+    end)
+  end, "Grep Rows Across All Columns")
+
+  map("/", function()
+    local cname = session.headers[session.cur_col] or "col"
+    vim.ui.input({
+      prompt = string.format("Filter column '%s' (e.g. > 500, = US, contains prod): ", cname),
+    }, function(inp)
+      if inp and vim.trim(inp) ~= "" then
+        M.apply_filter_expr(session, session.cur_col, vim.trim(inp))
+      end
+    end)
+  end, "Filter Current Column by Expression")
+
+  map("s", function()
+    session.sort = { col_idx = session.cur_col, dir = "ASC" }
+    session.cur_row = 1
+    session.top_row = 1
+    viewport.render(session)
+  end, "Sort Column Ascending ▲")
+
+  map("S", function()
+    session.sort = { col_idx = session.cur_col, dir = "DESC" }
+    session.cur_row = 1
+    session.top_row = 1
+    viewport.render(session)
+  end, "Sort Column Descending ▼")
+
+  -- 4. Counts, Value Frequencies, Column Analytics & SQL
+  map("gv", function()
+    modals.open_value_counts(session, session.cur_col)
+  end, "Value Counts / Frequency Breakdown")
+
+  map("gs", function()
+    modals.open_column_stats(session, session.cur_col)
+  end, "Column Summary Statistics & Distribution")
+
+  map("gc", function()
+    modals.open_column_jumper(session)
+  end, "100-Column Fuzzy Jumper & Manager")
+
+  map("<leader>cc", function()
+    modals.open_column_jumper(session)
+  end, "100-Column Fuzzy Jumper & Manager")
+
+  map("K", function()
+    modals.toggle_record_card(session)
+  end, "Toggle 100-Column Vertical Record Card")
+
+  map("<leader>cr", function()
+    modals.toggle_record_card(session)
+  end, "Toggle 100-Column Vertical Record Card")
+
+  map("gq", function()
+    modals.open_sql_runner(session)
+  end, "Run SQL Query on CSV")
+
+  map("<leader>cq", function()
+    modals.open_sql_runner(session)
+  end, "Run SQL Query on CSV")
+
+  -- 5. Pinning (Freeze Panes), Hiding, Width & Heatmap
+  map("gp", function()
+    local c = session.cur_col
+    session.pinned_cols[c] = not session.pinned_cols[c]
+    viewport.render(session)
+    vim.notify(string.format("[SuperCsv] Column %s #%d (%s) %s",
+      parser.col_to_excel(c), c, session.headers[c],
+      session.pinned_cols[c] and "Pinned 🔒" or "Unpinned"))
+  end, "Toggle Pin/Freeze Current Column")
+
+  map("gh", function()
+    if session.num_cols > 1 then
+      session.hidden_cols[session.cur_col] = true
+      step_col(session, 1)
+    end
+  end, "Hide Current Column")
+
+  map("gH", function()
+    session.hidden_cols = {}
+    viewport.render(session)
+    vim.notify("[SuperCsv] All hidden columns restored")
+  end, "Restore All Hidden Columns")
+
+  map("gm", function()
+    config.options.heatmap = not config.options.heatmap
+    viewport.render(session)
+    vim.notify("[SuperCsv] Numeric Heatmap: " .. (config.options.heatmap and "ON" or "OFF"))
+  end, "Toggle Numeric Heatmap")
+
+  map("+", function()
+    local c = session.cur_col
+    session.col_widths[c] = math.min(80, (session.col_widths[c] or 14) + 4)
+    viewport.render(session)
+  end, "Widen Current Column")
+
+  map("-", function()
+    local c = session.cur_col
+    session.col_widths[c] = math.max(6, (session.col_widths[c] or 14) - 4)
+    viewport.render(session)
+  end, "Narrow Current Column")
+
+  map("=", function()
+    local c = session.cur_col
+    local max_w = #session.headers[c] + 4
+    for _, r in ipairs(session.visible_rows or {}) do
+      local v = r.cells[c] or ""
+      if #v + 2 > max_w then max_w = #v + 2 end
+    end
+    session.col_widths[c] = math.min(60, math.max(8, max_w))
+    viewport.render(session)
+  end, "Auto-Fit Current Column Width")
+
+  -- 6. Cell Editing, Row Insert/Delete, Yank, Undo/Redo, Save
+  local function edit_active_cell()
+    local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
+    if not row_obj then return end
+    local c = session.cur_col
+    local old_val = row_obj.cells[c] or ""
+    vim.ui.input({
+      prompt = string.format("Edit Cell [%s%d] (%s): ", parser.col_to_excel(c), row_obj.rowid, session.headers[c]),
+      default = old_val,
+    }, function(new_val)
+      if new_val ~= nil and new_val ~= old_val then
+        sqlite.update_cell(session, row_obj.rowid, c, new_val, true)
+        viewport.render(session)
+      end
+    end)
+  end
+
+  map("<CR>", edit_active_cell, "Edit Active Cell")
+  map("e", edit_active_cell, "Edit Active Cell")
+
+  map("o", function()
+    local new_id = sqlite.insert_row(session, {})
+    session.cur_row = session.filtered_rows or session.total_rows or 1
+    viewport.render(session)
+    vim.notify(string.format("[SuperCsv] Appended new blank row #%d", new_id))
+  end, "Insert New Row")
+
+  map("dd", function()
+    local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
+    if row_obj then
+      sqlite.delete_row(session, row_obj.rowid)
+      viewport.render(session)
+      vim.notify(string.format("[SuperCsv] Deleted row #%d", row_obj.rowid))
+    end
+  end, "Delete Current Row")
+
+  map("yy", function()
+    local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
+    if row_obj then
+      local val = row_obj.cells[session.cur_col] or ""
+      vim.fn.setreg('"', val)
+      pcall(vim.fn.setreg, "+", val)
+      vim.notify(string.format("[SuperCsv] Yanked cell [%s%d]: %s", parser.col_to_excel(session.cur_col), row_obj.rowid, vim.inspect(val)))
+    end
+  end, "Yank Active Cell Value")
+
+  map("Y", function()
+    local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
+    if row_obj then
+      local obj = {}
+      for c = 1, session.num_cols do
+        obj[session.headers[c]] = row_obj.cells[c]
+      end
+      local json = vim.fn.json_encode(obj)
+      vim.fn.setreg('"', json)
+      pcall(vim.fn.setreg, "+", json)
+      vim.notify(string.format("[SuperCsv] Yanked Row #%d as JSON to clipboard", row_obj.rowid))
+    end
+  end, "Yank Entire Row as JSON")
+
+  map("u", function()
+    local ok, msg = sqlite.undo(session)
+    viewport.render(session)
+    vim.notify("[SuperCsv] " .. msg, ok and vim.log.levels.INFO or vim.log.levels.WARN)
+  end, "Undo Cell Edit")
+
+  map("<C-r>", function()
+    local ok, msg = sqlite.redo(session)
+    viewport.render(session)
+    vim.notify("[SuperCsv] " .. msg, ok and vim.log.levels.INFO or vim.log.levels.WARN)
+  end, "Redo Cell Edit")
+
+  map("<leader>cw", function()
+    local ok, err = sqlite.save_to_csv(session, session.filepath, false)
+    viewport.render(session)
+    if ok then
+      vim.notify(string.format("[SuperCsv] Saved %s successfully!", vim.fn.fnamemodify(session.filepath, ":t")))
+    else
+      vim.notify("[SuperCsv Save Error] " .. tostring(err), vim.log.levels.ERROR)
+    end
+  end, "Save Edits to CSV File")
+end
+
+--- Apply a text filter expression to a column
+function M.apply_filter_expr(session, col_idx, expr)
+  expr = vim.trim(expr or "")
+  if expr == "" or expr == "clear" then
+    session.filters[col_idx] = nil
+  elseif expr == "null" or expr == "notnull" or expr == "empty" then
+    session.filters[col_idx] = { op = expr, val = "" }
+  else
+    local op, val = expr:match("^([><=!~]+)%s*(.*)$")
+    if not op then
+      op, val = expr:match("^(%w+)%s+(.+)$")
+    end
+    if op then
+      session.filters[col_idx] = { op = op, val = val }
+    else
+      session.filters[col_idx] = { op = "contains", val = expr }
+    end
+  end
+  session.cached_where_sig = nil
+  session.cur_row = 1
+  session.top_row = 1
+  viewport.render(session)
+end
+
+--- Open a CSV file in the 2D Excel Virtual Viewport
+function M.open(filepath)
+  highlights.setup()
+  filepath = filepath and filepath ~= "" and vim.fn.fnamemodify(filepath, ":p") or vim.api.nvim_buf_get_name(0)
+  if filepath == "" or vim.fn.filereadable(filepath) == 0 then
+    vim.notify("[SuperCsv] File is not readable: " .. tostring(filepath), vim.log.levels.WARN)
+    return nil
+  end
+
+  -- Reuse existing session if already open
+  local existing = M.sessions_by_path[filepath]
+  if existing and existing.view_buf and vim.api.nvim_buf_is_valid(existing.view_buf) then
+    vim.api.nvim_win_set_buf(0, existing.view_buf)
+    existing.view_win = vim.api.nvim_get_current_win()
+    viewport.render(existing)
+    return existing
+  end
+
+  local slice, err = parser.read_initial_slice(filepath, 250)
+  if not slice then
+    vim.notify("[SuperCsv] " .. tostring(err), vim.log.levels.ERROR)
+    return nil
+  end
+
+  local view_buf = vim.api.nvim_create_buf(true, true)
+  local short_name = vim.fn.fnamemodify(filepath, ":t")
+  pcall(vim.api.nvim_buf_set_name, view_buf, "supercsv://" .. short_name .. " (" .. vim.fn.sha256(filepath):sub(1, 6) .. ")")
+  vim.bo[view_buf].buftype = "acwrite"
+  vim.bo[view_buf].swapfile = false
+  vim.bo[view_buf].modifiable = false
+  vim.bo[view_buf].filetype = "supercsv"
+
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, view_buf)
+  vim.wo[win].wrap = false
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].statuscolumn = ""
+  vim.wo[win].cursorline = false
+
+  local pinned_cols = {}
+  for c = 1, math.min(config.options.freeze_cols or 1, slice.num_cols) do
+    pinned_cols[c] = true
+  end
+
+  local session = {
+    filepath = filepath,
+    file_size = slice.file_size,
+    mtime = slice.mtime,
+    delim = slice.delim,
+    headers = slice.headers,
+    num_cols = slice.num_cols,
+    types = slice.types,
+    col_widths = slice.col_widths,
+    preview_rows = slice.preview_rows,
+    total_rows = #slice.preview_rows,
+    filtered_rows = #slice.preview_rows,
+    view_buf = view_buf,
+    view_win = win,
+    cur_row = 1,
+    top_row = 1,
+    cur_col = 1,
+    left_col = (slice.num_cols > (config.options.freeze_cols or 1)) and ((config.options.freeze_cols or 1) + 1) or 1,
+    pinned_cols = pinned_cols,
+    hidden_cols = {},
+    filters = {},
+    sort = nil,
+    grep_pattern = nil,
+    modified_cells = {},
+    edit_count = 0,
+    undo_stack = {},
+    redo_stack = {},
+  }
+
+  M.sessions_by_buf[view_buf] = session
+  M.sessions_by_path[filepath] = session
+
+  attach_keymaps(session)
+
+  -- Support `:w` on the virtual viewport buffer
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = view_buf,
+    callback = function()
+      local ok, save_err = sqlite.save_to_csv(session, session.filepath, false)
+      viewport.render(session)
+      if ok then
+        vim.notify(string.format("[SuperCsv] Saved %s", short_name))
+      else
+        vim.notify("[SuperCsv Save Error] " .. tostring(save_err), vim.log.levels.ERROR)
+      end
+    end,
+  })
+
+  -- Re-render automatically on window resize
+  vim.api.nvim_create_autocmd({ "WinResized", "VimResized", "BufWinEnter" }, {
+    buffer = view_buf,
+    callback = function()
+      session.view_win = vim.fn.bufwinid(view_buf)
+      viewport.render(session)
+    end,
+  })
+
+  -- Render Stage 1 immediately (< 15ms)
+  viewport.render(session)
+
+  -- Start Stage 2 SQLite engine
+  if config.options.sqlite_backend then
+    sqlite.init_session_db(session, function()
+      if vim.api.nvim_buf_is_valid(view_buf) then
+        viewport.render(session)
+      end
+    end)
+  end
+
+  return session
+end
+
+--- Dispatch `:SuperCsv <subcommand>`
+function M.command(args)
+  local parts = vim.split(vim.trim(args or ""), "%s+", { trimempty = true })
+  local sub = parts[1] or "open"
+  local rest = table.concat(parts, " ", 2)
+
+  if sub == "open" or sub == "toggle" then
+    local s = M.get_active_session()
+    if s and vim.api.nvim_get_current_buf() == s.view_buf and sub == "toggle" then
+      vim.cmd("edit " .. vim.fn.fnameescape(s.filepath))
+      return
+    end
+    local target = (rest ~= "") and rest or vim.api.nvim_buf_get_name(0)
+    M.open(target)
+    return
+  end
+
+  local session = M.get_active_session()
+  if not session then
+    session = M.open(vim.api.nvim_buf_get_name(0))
+    if not session then return end
+  end
+
+  if sub == "filter" then
+    if rest == "" then
+      modals.open_autofilter(session, session.cur_col)
+    else
+      M.apply_filter_expr(session, session.cur_col, rest)
+    end
+  elseif sub == "filter_val" then
+    local row_obj = session.visible_rows and session.visible_rows[session.cur_row - session.top_row + 1]
+    if row_obj then
+      local val = row_obj.cells[session.cur_col] or ""
+      session.filters[session.cur_col] = { values = { [val] = true } }
+      session.cached_where_sig = nil
+      session.cur_row = 1
+      session.top_row = 1
+      viewport.render(session)
+    end
+  elseif sub == "filter_clear" or sub == "clear" then
+    session.filters = {}
+    session.grep_pattern = nil
+    session.cached_where_sig = nil
+    session.cur_row = 1
+    session.top_row = 1
+    viewport.render(session)
+  elseif sub == "grep" then
+    session.grep_pattern = rest
+    session.cached_where_sig = nil
+    session.cur_row = 1
+    session.top_row = 1
+    viewport.render(session)
+  elseif sub == "freq" or sub == "value_counts" then
+    modals.open_value_counts(session, session.cur_col)
+  elseif sub == "stats" or sub == "count" or sub == "sum" then
+    modals.open_column_stats(session, session.cur_col)
+  elseif sub == "columns" or sub == "cols" then
+    modals.open_column_jumper(session)
+  elseif sub == "record" or sub == "card" then
+    modals.toggle_record_card(session)
+  elseif sub == "sql" or sub == "query" then
+    modals.open_sql_runner(session, rest)
+  elseif sub == "sort" then
+    local dir = (rest:upper() == "DESC") and "DESC" or "ASC"
+    session.sort = { col_idx = session.cur_col, dir = dir }
+    session.cur_row = 1
+    session.top_row = 1
+    viewport.render(session)
+  elseif sub == "freeze" or sub == "pin" then
+    local n = tonumber(rest)
+    if n then
+      session.pinned_cols = {}
+      for c = 1, math.min(n, session.num_cols) do
+        session.pinned_cols[c] = true
+      end
+    else
+      session.pinned_cols[session.cur_col] = not session.pinned_cols[session.cur_col]
+    end
+    viewport.render(session)
+  elseif sub == "heatmap" then
+    config.options.heatmap = not config.options.heatmap
+    viewport.render(session)
+  elseif sub == "save" then
+    sqlite.save_to_csv(session, session.filepath, false)
+    viewport.render(session)
+  elseif sub == "export" and rest ~= "" then
+    local ok, err = sqlite.save_to_csv(session, vim.fn.fnamemodify(rest, ":p"), true)
+    if ok then
+      vim.notify("[SuperCsv] Exported filtered view to " .. rest)
+    else
+      vim.notify("[SuperCsv Export Error] " .. tostring(err), vim.log.levels.ERROR)
+    end
+  else
+    vim.notify("[SuperCsv] Unknown subcommand: " .. sub, vim.log.levels.WARN)
+  end
+end
+
+function M.setup(opts)
+  config.setup(opts)
+  highlights.setup()
+
+  local augroup = vim.api.nvim_create_augroup("SuperCsvAuto", { clear = true })
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = augroup,
+    callback = function()
+      highlights.setup()
+    end,
+  })
+
+  if config.options.auto_open then
+    vim.api.nvim_create_autocmd("BufReadPost", {
+      group = augroup,
+      pattern = { "*.csv", "*.tsv" },
+      callback = function(ev)
+        local path = vim.api.nvim_buf_get_name(ev.buf)
+        if path ~= "" and not path:match("^supercsv://") then
+          vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(ev.buf) and vim.api.nvim_get_current_buf() == ev.buf then
+              M.open(path)
+            end
+          end)
+        end
+      end,
+    })
+  end
+end
+
+return M

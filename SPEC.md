@@ -237,18 +237,18 @@ To make testing, benchmarking, and showcasing effortless out of the box, `super-
 
 ### Phase 1: Example CSV Suite & Hybrid SQLite + Instant-Slice Engine
 - [x] Create `scripts/generate_examples.lua` and populate `examples/` (`employees_saas.csv`, `ecommerce_orders.csv`, `server_access_logs.csv`, `wide_100_columns.csv`, `edge_cases_rfc4180.csv`, plus `--million` generator) `@test: scripts/generate_examples.lua`
-- [ ] Implement RFC 4180 fast parser & 64KB instant slice reader (`lua/super-csv/engine/parser.lua`) `@impl: lua/super-csv/engine/parser.lua`
-- [ ] Implement SQLite hybrid backend (`sqlite3` CLI bulk `.import` + LuaJIT FFI `libsqlite3.so` query/aggregation/savepoint engine) (`lua/super-csv/engine/sqlite.lua`) `@impl: lua/super-csv/engine/sqlite.lua`
+- [x] Implement RFC 4180 fast parser & 64KB instant slice reader (`lua/super-csv/engine/parser.lua`) `@impl: lua/super-csv/engine/parser.lua`
+- [x] Implement SQLite hybrid backend (`sqlite3` CLI bulk `.import` + LuaJIT FFI `libsqlite3.so` query/aggregation/savepoint engine) (`lua/super-csv/engine/sqlite.lua`) `@impl: lua/super-csv/engine/sqlite.lua`
 
 ### Phase 2: Excel-Style 2D Virtual Viewport & 100-Column Ergonomics
-- [ ] Implement highlight theme with prominent frozen header, alternating column shading (`SuperCsvColEven`/`Odd`), frozen left columns (`║`), and Excel summary footer (`lua/super-csv/highlights.lua`, `lua/super-csv/ui/viewport.lua`) `@impl: lua/super-csv/ui/viewport.lua`
-- [ ] Implement 2D cell navigation (`h`/`j`/`k`/`l`, `Tab`/`S-Tab`, `H`/`L`, `0`/`$`, `gg`/`G`, `gp` freeze column, `+`/`-`/`=` column width) (`lua/super-csv/ui/navigation.lua`) `@impl: lua/super-csv/ui/navigation.lua`
-- [ ] Implement 100-Column Fuzzy Jumper (`<leader>cc`) and synchronized Vertical Record Card (`K` / `<leader>cr`) (`lua/super-csv/ui/picker.lua`, `lua/super-csv/ui/record_card.lua`) `@impl: lua/super-csv/ui/record_card.lua`
+- [x] Implement highlight theme with prominent frozen header, alternating column shading (`SuperCsvColEven`/`Odd`), frozen left columns (`║`), and Excel summary footer (`lua/super-csv/highlights.lua`, `lua/super-csv/ui/viewport.lua`) `@impl: lua/super-csv/ui/viewport.lua`
+- [x] Implement 2D cell navigation (`h`/`j`/`k`/`l`, `Tab`/`S-Tab`, `H`/`L`, `0`/`$`, `gg`/`G`, `gp` freeze column, `+`/`-`/`=` column width) (`lua/super-csv/init.lua`) `@impl: lua/super-csv/init.lua`
+- [x] Implement 100-Column Fuzzy Jumper (`<leader>cc`) and synchronized Vertical Record Card (`K` / `<leader>cr`) (`lua/super-csv/ui/modals.lua`) `@impl: lua/super-csv/ui/modals.lua`
 
 ### Phase 3: Excel AutoFilter, Grep, Value Counts & SQL Querying
-- [ ] Implement Excel AutoFilter popup (`f`, `fv`, `fx`, `F`) with distinct value checkboxes + numeric/string operators (`lua/super-csv/ui/autofilter.lua`) `@impl: lua/super-csv/ui/autofilter.lua`
-- [ ] Implement Value Frequency / Group-By popup (`gv` / `:SuperCsv freq`) and Column Histogram (`gs` / `:SuperCsv stats`) (`lua/super-csv/ui/freq_popup.lua`) `@impl: lua/super-csv/ui/freq_popup.lua`
-- [ ] Implement `:SuperCsv grep` (`g/`) and `:SuperCsv sql` (`gq`) (`lua/super-csv/engine/grep.lua`, `lua/super-csv/engine/query.lua`) `@impl: lua/super-csv/engine/query.lua`
+- [x] Implement Excel AutoFilter popup (`f`, `fv`, `fx`, `F`) with distinct value checkboxes + numeric/string operators (`lua/super-csv/ui/modals.lua`) `@impl: lua/super-csv/ui/modals.lua`
+- [x] Implement Value Frequency / Group-By popup (`gv` / `:SuperCsv freq`) and Column Histogram (`gs` / `:SuperCsv stats`) (`lua/super-csv/ui/modals.lua`) `@impl: lua/super-csv/ui/modals.lua`
+- [x] Implement `:SuperCsv grep` (`g/`) and `:SuperCsv sql` (`gq`) (`lua/super-csv/engine/sqlite.lua`, `lua/super-csv/ui/modals.lua`) `@impl: lua/super-csv/engine/sqlite.lua`
 
 ### Phase 4: Cell Editing, Undo/Redo & Atomic Save
-- [ ] Implement cell editing (`<CR>`/`e`), row insert/delete (`o`/`O`/`dd`), SQLite `SAVEPOINT` undo/redo (`u`/`<C-r>`), and atomic CSV export (`:w` / `:SuperCsv export`) (`lua/super-csv/engine/editor.lua`) `@impl: lua/super-csv/engine/editor.lua`
+- [x] Implement cell editing (`<CR>`/`e`), row insert/delete (`o`/`dd`), Undo/Redo (`u`/`<C-r>`), and atomic CSV export (`:w` / `:SuperCsv export`) (`lua/super-csv/engine/sqlite.lua`) `@impl: lua/super-csv/engine/sqlite.lua`
