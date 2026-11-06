@@ -251,33 +251,45 @@ local function attach_keymaps(session)
   map("<LeftMouse>", function()
     local mp = vim.fn.getmousepos()
     if mp and mp.winid == session.view_win then
+      if session.comment_bar_line and mp.line >= session.comment_bar_line and mp.line <= (session.comment_end_line or session.comment_bar_line) then
+        session.comments_expanded = not session.comments_expanded
+        viewport.render(session)
+        return
+      end
       local clicked_col = resolve_clicked_col(mp.wincol)
       if clicked_col then
         session.cur_col = clicked_col
       end
-      if mp.line >= 6 and session.visible_rows then
-        local row_idx = mp.line - 5
+      local hdr_lines = session.header_lines_count or 5
+      if mp.line >= (hdr_lines + 1) and session.visible_rows then
+        local row_idx = mp.line - hdr_lines
         if row_idx >= 1 and row_idx <= #session.visible_rows then
           session.cur_row = session.top_row + row_idx - 1
         end
       end
       viewport.render(session)
     end
-  end, "Select Cell / Column with Mouse")
+  end, "Select Cell / Column / Toggle Comments with Mouse")
 
   map("<2-LeftMouse>", function()
     local mp = vim.fn.getmousepos()
     if mp and mp.winid == session.view_win then
+      if session.comment_bar_line and mp.line >= session.comment_bar_line and mp.line <= (session.comment_end_line or session.comment_bar_line) then
+        session.comments_expanded = not session.comments_expanded
+        viewport.render(session)
+        return
+      end
       local clicked_col = resolve_clicked_col(mp.wincol)
       if clicked_col then
         session.cur_col = clicked_col
       end
-      if mp.line == 3 or mp.line == 4 then
+      local hdr_lines = session.header_lines_count or 5
+      if mp.line == (hdr_lines - 2) or mp.line == (hdr_lines - 1) then
         sqlite.ensure_indexed(session, function()
           modals.open_autofilter(session, session.cur_col)
         end)
-      elseif mp.line >= 6 and session.visible_rows then
-        local row_idx = mp.line - 5
+      elseif mp.line >= (hdr_lines + 1) and session.visible_rows then
+        local row_idx = mp.line - hdr_lines
         if row_idx >= 1 and row_idx <= #session.visible_rows then
           session.cur_row = session.top_row + row_idx - 1
           viewport.render(session)
@@ -507,6 +519,38 @@ local function attach_keymaps(session)
     M.switch_to_normal_csv(session)
   end, "Switch Back to Normal Raw CSV Buffer")
 
+  -- 5b. Collapsible Top CSV Comments (`c`, `#`, `z`, `za`, `zo`, `zc`, `C`, `<leader>cm`, `g#`, `<leader>c#`)
+  local function toggle_comments(force_state)
+    local cnt = #(session.comments or {})
+    if cnt == 0 then
+      vim.notify("[SuperCsv] No `#` comment lines in this CSV file", vim.log.levels.INFO)
+      return
+    end
+    if force_state ~= nil then
+      session.comments_expanded = force_state
+    else
+      session.comments_expanded = not session.comments_expanded
+    end
+    viewport.render(session)
+  end
+
+  map("c", function() toggle_comments(nil) end, "Toggle Top CSV Comments Panel")
+  map("#", function() toggle_comments(nil) end, "Toggle Top CSV Comments Panel")
+  map("z", function() toggle_comments(nil) end, "Toggle Top CSV Comments Panel")
+  map("za", function() toggle_comments(nil) end, "Toggle Top CSV Comments Panel")
+  map("zo", function() toggle_comments(true) end, "Expand Top CSV Comments Panel")
+  map("zc", function() toggle_comments(false) end, "Collapse Top CSV Comments Panel")
+  map("C", function() toggle_comments(nil) end, "Toggle Top CSV Comments Panel")
+  map("<leader>cm", function() toggle_comments(nil) end, "Toggle Top CSV Comments Panel")
+  map("g#", function() modals.open_comments_viewer(session) end, "Open Scrollable CSV Comments Inspector")
+  map("<leader>c#", function() modals.open_comments_viewer(session) end, "Open Scrollable CSV Comments Inspector")
+
+  -- 5c. Help & Shortcuts Reference (`?`, `g?`, `<F1>`, `<leader>ch`)
+  map("?", function() modals.open_help(session) end, "Show Keyboard Shortcuts & Help")
+  map("g?", function() modals.open_help(session) end, "Show Keyboard Shortcuts & Help")
+  map("<F1>", function() modals.open_help(session) end, "Show Keyboard Shortcuts & Help")
+  map("<leader>ch", function() modals.open_help(session) end, "Show Keyboard Shortcuts & Help")
+
   map("+", function()
     local c = session.cur_col
     session.col_widths[c] = math.min(80, (session.col_widths[c] or 14) + 4)
@@ -536,7 +580,6 @@ local function attach_keymaps(session)
   end
 
   map("i", edit_active_cell, "Edit Active Cell")
-  map("ce", edit_active_cell, "Edit Active Cell")
   map("<F2>", edit_active_cell, "Edit Active Cell")
   map("<CR>", edit_active_cell, "Edit Active Cell")
 
@@ -677,8 +720,10 @@ function M.switch_to_normal_csv(session)
   vim.wo[win].cursorline = true
   vim.wo[win].scrolloff = 4
 
-  -- Jump to the current row in the normal raw CSV buffer (+1 for header line)
-  local target_line = math.min(vim.api.nvim_buf_line_count(raw_buf), (session.cur_row or 1) + 1)
+  -- Jump to the current row in the normal raw CSV buffer (accounting for header + comment lines)
+  local row_obj = session.visible_rows and session.visible_rows[(session.cur_row or 1) - (session.top_row or 1) + 1]
+  local raw_line_num = (row_obj and row_obj.file_line) or ((session.cur_row or 1) + (session.header_line_num or 1))
+  local target_line = math.min(vim.api.nvim_buf_line_count(raw_buf), raw_line_num)
   pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, target_line), 0 })
 
   -- Bind <leader>cv in the raw buffer so pressing it again returns to SuperCsv!
@@ -700,9 +745,13 @@ function M.open(filepath)
   end
   M.disabled_paths[filepath] = nil
 
-  -- Reuse existing session if already open
+  -- Reuse existing session if already open AND file on disk has not changed
   local existing = M.sessions_by_path[filepath]
-  if existing and existing.view_buf and vim.api.nvim_buf_is_valid(existing.view_buf) then
+  local st = (vim.uv or vim.loop).fs_stat(filepath)
+  local cur_mtime = st and st.mtime and st.mtime.sec or 0
+  local cur_size = st and st.size or 0
+  if existing and existing.view_buf and vim.api.nvim_buf_is_valid(existing.view_buf)
+    and existing.mtime == cur_mtime and existing.file_size == cur_size and existing.comments ~= nil then
     vim.api.nvim_win_set_buf(0, existing.view_buf)
     existing.view_win = vim.api.nvim_get_current_win()
     vim.b[existing.view_buf].snacks_scroll = false
@@ -751,10 +800,15 @@ function M.open(filepath)
     mtime = slice.mtime,
     delim = slice.delim,
     headers = slice.headers,
+    header_line_num = slice.header_line_num or 1,
     num_cols = slice.num_cols,
     types = slice.types,
     col_widths = slice.col_widths,
     preview_rows = slice.preview_rows,
+    comments = slice.comments or {},
+    seen_comment_lines = slice.seen_comment_lines or {},
+    file_line_num = slice.file_line_num or 1,
+    comments_expanded = (config.options.comments_collapsed == false),
     file_offset = slice.file_offset,
     eof_reached = slice.eof_reached,
     total_rows = #slice.preview_rows,
@@ -975,6 +1029,33 @@ function M.command(args)
     config.save_persisted()
     viewport.render(session)
     vim.notify("[SuperCsv] Alternating Column Colors: " .. (config.options.zebra_columns and "ON (saved)" or "OFF (saved)"))
+  elseif sub == "comments" or sub == "comment" then
+    if rest == "popup" or rest == "modal" then
+      modals.open_comments_viewer(session)
+    elseif rest == "expand" or rest == "open" or rest == "show" then
+      session.comments_expanded = true
+      viewport.render(session)
+    elseif rest == "collapse" or rest == "close" or rest == "hide" then
+      session.comments_expanded = false
+      viewport.render(session)
+    else
+      session.comments_expanded = not session.comments_expanded
+      viewport.render(session)
+    end
+  elseif sub == "help" or sub == "?" then
+    modals.open_help(session)
+  elseif sub == "reload" then
+    for k in pairs(package.loaded) do
+      if k:match("^super%-csv") then
+        package.loaded[k] = nil
+      end
+    end
+    local fresh = require("super-csv")
+    fresh.setup(config.options)
+    if session and session.filepath then
+      fresh.open(session.filepath)
+    end
+    vim.notify("[SuperCsv] Reloaded plugin modules")
   elseif sub == "save" then
     sqlite.save_to_csv(session, session.filepath, false)
     viewport.render(session)
@@ -999,6 +1080,11 @@ function M.setup(opts)
     group = augroup,
     callback = function()
       highlights.setup()
+      for _, s in pairs(M.sessions_by_buf) do
+        if s.view_buf and vim.api.nvim_buf_is_valid(s.view_buf) then
+          viewport.render(s)
+        end
+      end
     end,
   })
 

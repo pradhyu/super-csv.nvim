@@ -149,7 +149,7 @@ end
 --- Build deterministic SQLite cache path for a CSV file
 function M.get_db_path(filepath, file_size, mtime)
   local config = require("super-csv.config").options
-  local key = string.format("%s|%d|%d", filepath, file_size or 0, mtime or 0)
+  local key = string.format("v2_comments|%s|%d|%d", filepath, file_size or 0, mtime or 0)
   local hash = vim.fn.sha256(key):sub(1, 20)
   local basename = vim.fn.fnamemodify(filepath, ":t:r"):gsub("[^%w_%-]", "_")
   return string.format("%s/%s_%s.sqlite", config.cache_dir, basename, hash)
@@ -252,12 +252,54 @@ CREATE VIEW csv AS SELECT %s FROM csv_data;
     table.concat(view_cols, ", ")
   )
 
-  local import_script = create_sql .. "\n" .. sep_cmd .. "\n"
-    .. string.format('.import --skip 1 %s csv_data\n', vim.fn.shellescape(session.filepath))
+  local has_comments = (session.comments and #session.comments > 0) or ((session.header_line_num or 1) > 1)
+  local cchar = vim.pesc((cfg and cfg.comment_char) or "#")
+  local import_target
+  if has_comments then
+    import_target = string.format('"| grep -v \'^[[:space:]]*%s\' %s"', cchar, vim.fn.shellescape(session.filepath))
+  else
+    import_target = vim.fn.shellescape(session.filepath)
+  end
 
-  -- For small files (< 2MB), import synchronously in ~15ms so SQLite is ready immediately on first frame!
+  local import_script = create_sql .. "\n" .. sep_cmd .. "\n"
+    .. string.format('.import --skip 1 %s csv_data\n', import_target)
+
+  -- For small files (< 2MB), import synchronously so SQLite is ready immediately on first frame!
   if (session.file_size or 0) < 2 * 1024 * 1024 then
-    vim.fn.system({ "sqlite3", db_path }, import_script)
+    if has_comments and sqlite_lib then
+      -- Fast in-process FFI bulk insert (< 2ms, skips comments & preserves RFC 4180 parsing)
+      local parser = require("super-csv.engine.parser")
+      if not session.eof_reached then
+        parser.load_next_batch(session, 1000000)
+      end
+      local db = M.open_db(db_path)
+      if db then
+        M.exec(db, create_sql)
+        M.exec(db, "BEGIN IMMEDIATE TRANSACTION;")
+        local ph = {}
+        for c = 1, session.num_cols do
+          ph[c] = "?"
+        end
+        local ins_sql = string.format("INSERT INTO csv_data VALUES (%s);", table.concat(ph, ","))
+        local ppStmt = ffi.new("sqlite3_stmt*[1]")
+        if sqlite_lib.sqlite3_prepare_v2(db, ins_sql, #ins_sql, ppStmt, nil) == SQLITE_OK then
+          local stmt = ppStmt[0]
+          for _, r in ipairs(session.preview_rows or {}) do
+            for c = 1, session.num_cols do
+              local s = tostring(r.cells[c] or "")
+              sqlite_lib.sqlite3_bind_text(stmt, c, s, #s, SQLITE_TRANSIENT)
+            end
+            sqlite_lib.sqlite3_step(stmt)
+            sqlite_lib.sqlite3_reset(stmt)
+          end
+          sqlite_lib.sqlite3_finalize(stmt)
+        end
+        M.exec(db, "COMMIT;")
+        M.close_db(db)
+      end
+    else
+      vim.fn.system({ "sqlite3", db_path }, import_script)
+    end
     finalize_open()
   else
     session.sqlite_indexing = true
@@ -947,7 +989,7 @@ function M.run_custom_sql(session, sql_query)
   }
 end
 
---- Atomically save/export to CSV file
+--- Atomically save/export to CSV file (preserving `#` comments when saving back to full CSV)
 function M.save_to_csv(session, target_path, only_filtered)
   target_path = target_path or session.filepath
   local parser = require("super-csv.engine.parser")
@@ -957,8 +999,33 @@ function M.save_to_csv(session, target_path, only_filtered)
     return false, "Cannot open temp file: " .. tostring(err)
   end
 
+  local comments_by_after_row = {}
+  local max_after_row = 0
+  if not only_filtered and session.comments and #session.comments > 0 then
+    for _, cm in ipairs(session.comments) do
+      if cm.before_header then
+        f:write(cm.text .. "\n")
+      else
+        local ar = cm.after_rowid or 0
+        comments_by_after_row[ar] = comments_by_after_row[ar] or {}
+        table.insert(comments_by_after_row[ar], cm.text)
+        if ar > max_after_row then
+          max_after_row = ar
+        end
+      end
+    end
+  end
+
   f:write(parser.encode_line(session.headers, session.delim) .. "\n")
 
+  if comments_by_after_row[0] then
+    for _, ctext in ipairs(comments_by_after_row[0]) do
+      f:write(ctext .. "\n")
+    end
+    comments_by_after_row[0] = nil
+  end
+
+  local row_seq = 0
   if session.sqlite_ready and session.db then
     local where_sql = only_filtered and M.build_where_clause(session) or ""
     local order_sql = only_filtered and M.build_order_clause(session) or "ORDER BY rowid ASC"
@@ -979,8 +1046,16 @@ function M.save_to_csv(session, target_path, only_filtered)
           local txt = sqlite_lib.sqlite3_column_text(stmt, c)
           vals[c + 1] = txt ~= nil and ffi.string(txt) or ""
         end
+        row_seq = row_seq + 1
         count = count + 1
         chunk[count] = parser.encode_line(vals, session.delim)
+        if comments_by_after_row[row_seq] then
+          for _, ctext in ipairs(comments_by_after_row[row_seq]) do
+            count = count + 1
+            chunk[count] = ctext
+          end
+          comments_by_after_row[row_seq] = nil
+        end
         if count >= 2000 then
           f:write(table.concat(chunk, "\n") .. "\n")
           chunk = {}
@@ -994,7 +1069,25 @@ function M.save_to_csv(session, target_path, only_filtered)
     end
   else
     for _, r in ipairs(session.preview_rows or {}) do
+      row_seq = row_seq + 1
       f:write(parser.encode_line(r.cells, session.delim) .. "\n")
+      if comments_by_after_row[row_seq] then
+        for _, ctext in ipairs(comments_by_after_row[row_seq]) do
+          f:write(ctext .. "\n")
+        end
+        comments_by_after_row[row_seq] = nil
+      end
+    end
+  end
+
+  -- Write any remaining trailing comments whose after_rowid was beyond the final row count
+  if max_after_row > row_seq then
+    for ar = row_seq + 1, max_after_row do
+      if comments_by_after_row[ar] then
+        for _, ctext in ipairs(comments_by_after_row[ar]) do
+          f:write(ctext .. "\n")
+        end
+      end
     end
   end
 

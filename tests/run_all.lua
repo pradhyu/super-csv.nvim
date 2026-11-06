@@ -30,6 +30,8 @@ local viewport = require("super-csv.ui.viewport")
 local modals = require("super-csv.ui.modals")
 
 super_csv.setup({ auto_open = false })
+require("super-csv.config").options.zebra_rows = true
+require("super-csv.config").save_persisted()
 
 -- 1. Test Excel column letters (1..100)
 assert_eq(parser.col_to_excel(1), "A", "Col 1 -> A")
@@ -147,6 +149,77 @@ assert_true(vim.api.nvim_buf_get_name(0) == wide_path, "Current buffer is the ra
 super_csv.command("toggle")
 assert_true(super_csv.disabled_paths[wide_path] == nil, "second toggle returned to SuperCsv 2D viewport")
 assert_eq(vim.bo.filetype, "supercsv", "Buffer filetype is supercsv again")
+
+-- 10b. Test '#' Comments Support (Top Header Comments & Multi-Location Scattered Comments)
+local top_cm_path = "/home/pkshrestha/git/super-csv.nvim/examples/comments_top_header.csv"
+local s_top_cm = super_csv.open(top_cm_path)
+assert_true(s_top_cm ~= nil, "Opened comments_top_header.csv")
+assert_eq(s_top_cm.num_cols, 10, "comments_top_header.csv has 10 columns (ignored # lines)")
+assert_eq(s_top_cm.headers[1], "sensor_id", "First column header is sensor_id (skipped 6 top comment lines)")
+assert_eq(s_top_cm.total_rows, 40, "comments_top_header.csv has exactly 40 data rows")
+assert_eq(#s_top_cm.comments, 7, "comments_top_header.csv collected 7 comments (6 top + 1 bottom)")
+assert_eq(s_top_cm.comments[1].line_num, 1, "First top comment at L1")
+assert_eq(s_top_cm.comments[6].line_num, 6, "Sixth top comment at L6")
+assert_eq(s_top_cm.comments[7].line_num, 48, "Bottom comment at L48")
+assert_eq(s_top_cm.comments_expanded, false, "Comments panel is collapsed by default")
+
+local scat_cm_path = "/home/pkshrestha/git/super-csv.nvim/examples/comments_scattered_locations.csv"
+local s_scat = super_csv.open(scat_cm_path)
+assert_true(s_scat ~= nil, "Opened comments_scattered_locations.csv")
+assert_eq(s_scat.num_cols, 10, "comments_scattered_locations.csv has 10 columns")
+assert_eq(s_scat.headers[1], "batch_seq", "Header is batch_seq at L4")
+assert_eq(s_scat.total_rows, 50, "comments_scattered_locations.csv has 50 data rows (ignored all 10 scattered # lines)")
+assert_eq(#s_scat.comments, 10, "Gathered all 10 comments from top, after-header, mid-file, and bottom")
+assert_eq(s_scat.comments[1].line_num, 1, "Comment #1 is at L1 (top)")
+assert_eq(s_scat.comments[4].line_num, 5, "Comment #4 is at L5 (after header)")
+assert_eq(s_scat.comments[5].line_num, 21, "Comment #5 is at L21 (mid-file after row 15)")
+assert_eq(s_scat.comments[7].line_num, 38, "Comment #7 is at L38 (mid-file after row 30)")
+assert_eq(s_scat.comments[8].line_num, 51, "Comment #8 is at L51 (mid-file after row 42)")
+assert_eq(s_scat.comments[10].line_num, 61, "Comment #10 is at L61 (bottom of file)")
+assert_eq(s_scat.comments_expanded, false, "Scattered comments are collapsed at top by default")
+
+local collapsed_buf_lines = vim.api.nvim_buf_get_lines(s_scat.view_buf, 0, 5, false)
+assert_true(collapsed_buf_lines[2]:find("▶ %[c / # / z%] Show # Comments %(10 lines:") ~= nil, "Collapsed comment bar rendered at top line 2 with [c / # / z] key hint")
+
+-- Expand comments at top and verify line numbers are displayed at top
+super_csv.command("comments expand")
+assert_eq(s_scat.comments_expanded, true, "Comments expanded via command")
+local expanded_buf_lines = vim.api.nvim_buf_get_lines(s_scat.view_buf, 0, 15, false)
+assert_true(expanded_buf_lines[2]:find("▼ %[c / # / z%] Hide # Comments") ~= nil, "Expanded comment bar rendered at top line 2")
+assert_true(expanded_buf_lines[3]:find("L1 ") ~= nil and expanded_buf_lines[3]:find("# %[TOP L1%]") ~= nil, "First expanded comment line shows L1")
+assert_true(expanded_buf_lines[7]:find("L21 ") ~= nil and expanded_buf_lines[7]:find("# %[MID%-FILE L21%]") ~= nil, "Mid-file comment shown at top with L21")
+
+-- Collapse back
+super_csv.command("comments collapse")
+assert_eq(s_scat.comments_expanded, false, "Comments collapsed back")
+
+-- Test '?' Help Modal
+local help_buf, help_win = modals.open_help(s_scat)
+assert_true(help_buf ~= nil and vim.api.nvim_buf_is_valid(help_buf), "Help modal opened via modals.open_help")
+local help_lines = vim.api.nvim_buf_get_lines(help_buf, 0, -1, false)
+assert_true(#help_lines > 20, "Help modal lists all shortcuts")
+vim.api.nvim_win_close(help_win, true)
+
+-- 10c. Test Dynamic Neovim Colorscheme Adaptation
+vim.api.nvim_set_hl(0, "Normal", { fg = "#ebdbb2", bg = "#282828" })
+vim.api.nvim_set_hl(0, "CursorLine", { bg = "#3c3836" })
+vim.api.nvim_set_hl(0, "Title", { fg = "#b8bb26", bold = true })
+require("super-csv.highlights").ensure_synced()
+local hl_odd_1 = vim.api.nvim_get_hl(0, { name = "SuperCsvRowOddColOdd", link = false })
+local hl_hdr_1 = vim.api.nvim_get_hl(0, { name = "SuperCsvHeaderBanner", link = false })
+assert_eq(hl_odd_1.bg, 0x282828, "SuperCsvRowOddColOdd bg matches Gruvbox Normal bg (#282828)")
+assert_eq(hl_odd_1.fg, 0xebdbb2, "SuperCsvRowOddColOdd fg matches Gruvbox Normal fg (#ebdbb2)")
+assert_eq(hl_hdr_1.fg, 0xb8bb26, "SuperCsvHeaderBanner fg matches Gruvbox Title fg (#b8bb26)")
+
+vim.api.nvim_set_hl(0, "Normal", { fg = "#c0caf5", bg = "#1a1b26" })
+vim.api.nvim_set_hl(0, "CursorLine", { bg = "#292e42" })
+vim.api.nvim_set_hl(0, "Title", { fg = "#7aa2f7", bold = true })
+viewport.render(s_scat)
+local hl_odd_2 = vim.api.nvim_get_hl(0, { name = "SuperCsvRowOddColOdd", link = false })
+local hl_hdr_2 = vim.api.nvim_get_hl(0, { name = "SuperCsvHeaderBanner", link = false })
+assert_eq(hl_odd_2.bg, 0x1a1b26, "SuperCsvRowOddColOdd bg updates to TokyoNight Normal bg (#1a1b26)")
+assert_eq(hl_odd_2.fg, 0xc0caf5, "SuperCsvRowOddColOdd fg updates to TokyoNight Normal fg (#c0caf5)")
+assert_eq(hl_hdr_2.fg, 0x7aa2f7, "SuperCsvHeaderBanner fg updates to TokyoNight Title fg (#7aa2f7)")
 
 -- 11. Test 1,000,000-row x 100-column CSV initial slice open (< 35ms)
 local million_path = "/home/pkshrestha/git/super-csv.nvim/examples/million_100cols.csv"

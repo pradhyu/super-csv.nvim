@@ -22,19 +22,41 @@ local function csv_quote(val)
   return s
 end
 
-local function write_csv(filepath, headers, rows_iter, total_rows)
+local function write_csv(filepath, headers, rows_iter, total_rows, comments_spec)
   local f = assert(io.open(filepath, "wb"))
+  if comments_spec and comments_spec.top then
+    for _, c in ipairs(comments_spec.top) do
+      f:write(c .. "\n")
+    end
+  end
   f:write(table.concat(headers, ",") .. "\n")
+  if comments_spec and comments_spec.after_header then
+    for _, c in ipairs(comments_spec.after_header) do
+      f:write(c .. "\n")
+    end
+  end
   local buf = {}
   local buf_count = 0
   for r = 1, total_rows do
     local row = rows_iter(r)
     buf_count = buf_count + 1
     buf[buf_count] = row
+    if comments_spec and comments_spec.after_row and comments_spec.after_row[r] then
+      for _, c in ipairs(comments_spec.after_row[r]) do
+        buf_count = buf_count + 1
+        buf[buf_count] = c
+      end
+    end
     if buf_count >= 2000 then
       f:write(table.concat(buf, "\n") .. "\n")
       buf = {}
       buf_count = 0
+    end
+  end
+  if comments_spec and comments_spec.bottom then
+    for _, c in ipairs(comments_spec.bottom) do
+      buf_count = buf_count + 1
+      buf[buf_count] = c
     end
   end
   if buf_count > 0 then
@@ -106,7 +128,19 @@ do
       pick(ratings),
       pick(statuses),
     }, ",")
-  end, 120)
+  end, 120, {
+    top = {
+      "# Dataset: Acme Cloud Global Employee Directory (FY2026)",
+      "# Schema: 16 columns | Exported from Workday HRIS v4.2",
+      "# Press '#' or 'z' (or click the comment bar) to expand/collapse comments!",
+    },
+    after_row = {
+      [60] = { "# [MID-FILE CHECKPOINT @ Row 60] EMEA & APAC regional compensation sync verified" },
+    },
+    bottom = {
+      "# [END OF EXPORT] 120 active/contractor employee records verified",
+    },
+  })
 end
 
 -- 2. examples/ecommerce_orders.csv (500 rows x 24 cols)
@@ -342,6 +376,105 @@ do
       csv_quote(string.format('{"row":%d,"tags":["csv","sqlite","nvim"]}', r)),
     }, ",")
   end, 50)
+end
+
+-- 6. examples/comments_top_header.csv (40 rows x 10 cols, with mostly top metadata `#` comments)
+do
+  local headers = {
+    "sensor_id", "datacenter", "rack_unit", "firmware_ver", "temp_celsius",
+    "fan_rpm", "power_watts", "voltage_v", "alert_state", "last_heartbeat"
+  }
+  local dcs = { "dc-us-east-1", "dc-us-west-2", "dc-eu-central-1", "dc-ap-northeast-1" }
+  local fw = { "v2.4.1", "v2.4.2", "v2.5.0-rc1" }
+  local alerts = { "NOMINAL", "NOMINAL", "NOMINAL", "WARN_HIGH_TEMP", "NOMINAL", "MAINTENANCE" }
+
+  write_csv(examples_dir .. "/comments_top_header.csv", headers, function(r)
+    local dc = dcs[(r % #dcs) + 1]
+    local temp = 28.0 + ((r * 13) % 45) * 0.85
+    local rpm = 3200 + ((r * 97) % 2400)
+    local watts = 180 + ((r * 41) % 320)
+    local volts = 11.85 + ((r * 7) % 35) * 0.01
+    local state = (temp > 58.0) and "WARN_HIGH_TEMP" or alerts[(r % #alerts) + 1]
+    return table.concat({
+      string.format("SNS-%04d", r),
+      dc,
+      string.format("RACK-%02d-U%02d", (r % 12) + 1, (r % 42) + 1),
+      fw[(r % #fw) + 1],
+      string.format("%.2f", temp),
+      tostring(rpm),
+      string.format("%.1f", watts),
+      string.format("%.2f", volts),
+      state,
+      string.format("2026-11-06T02:%02d:%02dZ", (r * 3) % 60, (r * 17) % 60),
+    }, ",")
+  end, 40, {
+    top = {
+      "# ============================================================================",
+      "# HARDWARE TELEMETRY EXPORT — TOP HEADER COMMENTS EXAMPLE",
+      "# Generated: 2026-11-06T03:00:00Z | Collector: prometheus-edge-exporter v3.8",
+      "# Environment: production | Delimiter: comma (,) | Encoding: UTF-8",
+      "# Note: All '#' lines are ignored in CSV parsing and shown here at the top!",
+      "# ============================================================================",
+    },
+    bottom = {
+      "# End of telemetry snapshot (40 sensors reported, 0 dropped packets)",
+    },
+  })
+end
+
+-- 7. examples/comments_scattered_locations.csv (50 rows x 10 cols, with `#` comments at top, after header, middle sections, and bottom)
+do
+  local headers = {
+    "batch_seq", "tx_hash", "cluster", "shard_id", "op_type",
+    "records_processed", "duration_ms", "throughput_rps", "retry_count", "status"
+  }
+  local clusters = { "us-east-primary", "eu-west-replica", "ap-south-analytics", "us-west-failover" }
+  local ops = { "BULK_UPSERT", "INDEX_COMPACT", "WAL_CHECKPOINT", "SNAPSHOT_SYNC", "STREAM_FLUSH" }
+  local statuses = { "COMMITTED", "COMMITTED", "COMMITTED", "RETRY_OK", "THROTTLED" }
+
+  write_csv(examples_dir .. "/comments_scattered_locations.csv", headers, function(r)
+    local recs = 500 + ((r * 313) % 9500)
+    local dur = 12.5 + ((r * 67) % 480) * 1.15
+    local rps = (recs * 1000.0) / dur
+    local retries = (r % 11 == 0) and 2 or ((r % 7 == 0) and 1 or 0)
+    return table.concat({
+      string.format("BATCH-%04d", r),
+      string.format("0x%08x%06x", (r * 2654435761) % 0xffffffff, (r * 99991) % 0xffffff),
+      clusters[(r % #clusters) + 1],
+      string.format("shard-%02d", (r % 8) + 1),
+      ops[(r % #ops) + 1],
+      tostring(recs),
+      string.format("%.2f", dur),
+      string.format("%.1f", rps),
+      tostring(retries),
+      (retries > 0) and "RETRY_OK" or statuses[(r % #statuses) + 1],
+    }, ",")
+  end, 50, {
+    top = {
+      "# [TOP L1] Distributed Storage Engine — Multi-Location Comment Example",
+      "# [TOP L2] This file has '#' comments at the top, after the header, mid-file, and at the bottom.",
+      "# [TOP L3] SuperCsv ignores all '#' lines in the data grid and gathers them at the top with their file line numbers!",
+    },
+    after_header = {
+      "# [AFTER-HEADER L5] Phase 1: Initial US-EAST & EU-WEST ingestion window (Rows 1..15)",
+    },
+    after_row = {
+      [15] = {
+        "# [MID-FILE L21] --- Phase 2: Failover drill triggered on eu-west-replica (after Row #15) ---",
+        "# [MID-FILE L22] Increased WAL checkpoint frequency during shard rebalancing",
+      },
+      [30] = {
+        "# [MID-FILE L38] --- Phase 3: Peak traffic burst observed at 02:30 UTC (after Row #30) ---",
+      },
+      [42] = {
+        "# [MID-FILE L51] --- Phase 4: Post-compaction steady state recovery (after Row #42) ---",
+      },
+    },
+    bottom = {
+      "# [BOTTOM L60] Summary: 50 storage batches completed across 4 clusters",
+      "# [BOTTOM L61] Audit Checksum: sha256:8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    },
+  })
 end
 
 -- Optional: --million flag generates examples/million_100cols.csv (1,000,000 rows x 100 columns)

@@ -14,9 +14,29 @@ function M.col_to_excel(idx)
   return s
 end
 
---- Detect delimiter (',', '\t', '|', ';') from sample text
+--- Check if a CSV line is a comment line (starts with `#` after optional whitespace)
+function M.is_comment_line(line)
+  if not line or line == "" then
+    return false
+  end
+  local cfg = require("super-csv.config").options
+  local cchar = (cfg and cfg.comment_char) or "#"
+  if cchar == "" then
+    return false
+  end
+  return line:match("^%s*" .. vim.pesc(cchar)) ~= nil
+end
+
+--- Detect delimiter (',', '\t', '|', ';') from sample text (skipping leading `#` comment lines)
 function M.detect_delimiter(sample)
-  local first_line = sample:match("^([^\r\n]+)") or sample
+  local first_line = nil
+  for l in (sample or ""):gmatch("[^\r\n]+") do
+    if l ~= "" and not M.is_comment_line(l) then
+      first_line = l
+      break
+    end
+  end
+  first_line = first_line or sample:match("^([^\r\n]+)") or sample
   local candidates = { ",", "\t", "|", ";" }
   local best_delim = ","
   local best_count = -1
@@ -140,7 +160,7 @@ function M.infer_column_types(headers, rows)
     local bool_count = 0
     local date_count = 0
     local non_empty = 0
-    local max_len = math.max(#headers[c] + 4, config.min_col_width)
+    local max_len = math.max(#headers[c], config.min_col_width or 10)
 
     for r = 1, math.min(#rows, 100) do
       local val = rows[r].cells and rows[r].cells[c] or rows[r][c] or ""
@@ -156,7 +176,7 @@ function M.infer_column_types(headers, rows)
           date_count = date_count + 1
         else
           local cleaned = val:gsub("^%$", ""):gsub(",", "")
-          local n = tonumber(cleaned)
+          local n = (not cleaned:match("^0[xX]")) and tonumber(cleaned) or nil
           if n ~= nil then
             num_count = num_count + 1
             if not cleaned:find("%.") and not cleaned:lower():find("e") then
@@ -179,7 +199,8 @@ function M.infer_column_types(headers, rows)
       types[c] = "str"
     end
 
-    col_widths[c] = math.min(math.max(max_len + 2, config.min_col_width), config.max_col_width)
+    local min_hdr_w = (c == 1) and 13 or 11
+    col_widths[c] = math.min(math.max(max_len, min_hdr_w, config.min_col_width or 10), config.max_col_width or 28)
   end
 
   return types, col_widths
@@ -196,43 +217,101 @@ function M.read_initial_slice(filepath, max_preview_rows)
   local stat = uv.fs_fstat(fd)
   local file_size = stat and stat.size or 0
   local mtime = stat and stat.mtime and stat.mtime.sec or 0
-  local read_len = math.min(file_size, 524288) -- 512KB initial batch slice
+  -- Read full file if <= 2MB so all top/middle/bottom comments are gathered immediately; 512KB slice for huge files
+  local max_slice = (file_size <= 2 * 1024 * 1024) and file_size or 524288
+  local read_len = math.min(file_size, max_slice)
   local chunk = read_len > 0 and uv.fs_read(fd, read_len, 0) or ""
   uv.fs_close(fd)
 
   local delim = M.detect_delimiter(chunk)
-  local lines = {}
   local pos = 1
   local chunk_len = #chunk
   local bytes_consumed = 0
+  local file_line_num = 0
+  local stream_line_num = 0
+  local header_line = nil
+  local header_line_num = 1
+  local raw_rows = {}
+  local comments = {}
+  local seen_comment_lines = {}
+  local total_data_rows_seen = 0
+  local stopped_early = false
+
+  local function handle_line(raw_line, line_end_byte)
+    file_line_num = file_line_num + 1
+    local clean = raw_line
+    if #clean > 0 and clean:sub(#clean, #clean) == "\r" then
+      clean = clean:sub(1, #clean - 1)
+    end
+
+    if M.is_comment_line(clean) then
+      seen_comment_lines[file_line_num] = true
+      table.insert(comments, {
+        line_num = file_line_num,
+        text = clean,
+        before_header = (header_line == nil),
+        after_rowid = total_data_rows_seen,
+      })
+      if not stopped_early then
+        bytes_consumed = line_end_byte
+        stream_line_num = file_line_num
+      end
+      return true
+    elseif clean ~= "" then
+      if not header_line then
+        header_line = clean
+        header_line_num = file_line_num
+        bytes_consumed = line_end_byte
+        stream_line_num = file_line_num
+        return true
+      else
+        total_data_rows_seen = total_data_rows_seen + 1
+        if not stopped_early then
+          if #raw_rows < max_preview_rows then
+            table.insert(raw_rows, {
+              line = clean,
+              file_line = file_line_num,
+            })
+            bytes_consumed = line_end_byte
+            stream_line_num = file_line_num
+          else
+            stopped_early = true
+            if read_len < file_size then
+              return false -- Huge file: stop scanning now to keep open < 10ms
+            end
+          end
+        end
+        return true
+      end
+    else
+      if not stopped_early then
+        bytes_consumed = line_end_byte
+        stream_line_num = file_line_num
+      end
+      return true
+    end
+  end
 
   while pos <= chunk_len do
     local nl = chunk:find("\n", pos, true)
     if nl then
       local line = chunk:sub(pos, nl - 1)
-      bytes_consumed = nl
       pos = nl + 1
-      if line ~= "" or #lines == 0 then
-        table.insert(lines, line)
-        if #lines >= max_preview_rows + 1 then
-          break
-        end
+      if not handle_line(line, nl) then
+        break
       end
     else
       if read_len >= file_size then
         local line = chunk:sub(pos)
-        bytes_consumed = chunk_len
-        if line ~= "" then
-          table.insert(lines, line)
-        end
+        handle_line(line, chunk_len)
       end
       break
     end
   end
 
-  local eof_reached = (bytes_consumed >= file_size)
+  local eof_reached = (not stopped_early) and (bytes_consumed >= file_size)
 
-  local headers = M.parse_line(lines[1] or "col_1", delim)
+  local headers = M.parse_line(header_line or "col_1", delim)
   local num_cols = #headers
   for c = 1, num_cols do
     if headers[c] == "" then
@@ -241,19 +320,18 @@ function M.read_initial_slice(filepath, max_preview_rows)
   end
 
   local rows = {}
-  for i = 2, #lines do
-    if lines[i] ~= "" then
-      local parsed = M.parse_line(lines[i], delim)
-      for c = 1, num_cols do
-        if parsed[c] == nil then
-          parsed[c] = ""
-        end
+  for i, item in ipairs(raw_rows) do
+    local parsed = M.parse_line(item.line, delim)
+    for c = 1, num_cols do
+      if parsed[c] == nil then
+        parsed[c] = ""
       end
-      table.insert(rows, {
-        rowid = i - 1,
-        cells = parsed,
-      })
     end
+    table.insert(rows, {
+      rowid = i,
+      file_line = item.file_line,
+      cells = parsed,
+    })
   end
 
   local types, col_widths = M.infer_column_types(headers, rows)
@@ -263,10 +341,14 @@ function M.read_initial_slice(filepath, max_preview_rows)
     mtime = mtime,
     delim = delim,
     headers = headers,
+    header_line_num = header_line_num,
     num_cols = num_cols,
     types = types,
     col_widths = col_widths,
     preview_rows = rows,
+    comments = comments,
+    seen_comment_lines = seen_comment_lines,
+    file_line_num = stream_line_num,
     file_offset = bytes_consumed,
     eof_reached = eof_reached,
     is_complete_in_preview = eof_reached,
@@ -298,6 +380,45 @@ function M.load_next_batch(session, batch_rows)
   local delim = session.delim
   local rows = session.preview_rows
   local next_rowid = (#rows > 0 and rows[#rows].rowid or 0) + 1
+  local file_line_num = session.file_line_num or 1
+  session.comments = session.comments or {}
+  session.seen_comment_lines = session.seen_comment_lines or {}
+
+  local function process_stream_line(raw_line)
+    file_line_num = file_line_num + 1
+    local clean = raw_line
+    if #clean > 0 and clean:sub(#clean, #clean) == "\r" then
+      clean = clean:sub(1, #clean - 1)
+    end
+    if clean == "" then
+      return
+    end
+    if M.is_comment_line(clean) then
+      if not session.seen_comment_lines[file_line_num] then
+        session.seen_comment_lines[file_line_num] = true
+        table.insert(session.comments, {
+          line_num = file_line_num,
+          text = clean,
+          before_header = false,
+          after_rowid = next_rowid - 1,
+        })
+      end
+      return
+    end
+    local parsed = M.parse_line(clean, delim)
+    for c = 1, num_cols do
+      if parsed[c] == nil then
+        parsed[c] = ""
+      end
+    end
+    rows[#rows + 1] = {
+      rowid = next_rowid,
+      file_line = file_line_num,
+      cells = parsed,
+    }
+    next_rowid = next_rowid + 1
+    added = added + 1
+  end
 
   while added < batch_rows and offset < file_size do
     local read_len = math.min(file_size - offset, 524288) -- 512KB per read
@@ -318,38 +439,12 @@ function M.load_next_batch(session, batch_rows)
         local line = chunk:sub(pos, nl - 1)
         consumed_in_chunk = nl
         pos = nl + 1
-        if line ~= "" and line ~= "\r" then
-          local parsed = M.parse_line(line, delim)
-          for c = 1, num_cols do
-            if parsed[c] == nil then
-              parsed[c] = ""
-            end
-          end
-          rows[#rows + 1] = {
-            rowid = next_rowid,
-            cells = parsed,
-          }
-          next_rowid = next_rowid + 1
-          added = added + 1
-        end
+        process_stream_line(line)
       else
         if offset + chunk_len >= file_size then
           local line = chunk:sub(pos)
           consumed_in_chunk = chunk_len
-          if line ~= "" and line ~= "\r" then
-            local parsed = M.parse_line(line, delim)
-            for c = 1, num_cols do
-              if parsed[c] == nil then
-                parsed[c] = ""
-              end
-            end
-            rows[#rows + 1] = {
-              rowid = next_rowid,
-              cells = parsed,
-            }
-            next_rowid = next_rowid + 1
-            added = added + 1
-          end
+          process_stream_line(line)
         end
         break
       end
@@ -368,6 +463,7 @@ function M.load_next_batch(session, batch_rows)
 
   uv.fs_close(fd)
   session.file_offset = offset
+  session.file_line_num = file_line_num
   if not session.sqlite_ready then
     session.total_rows = #rows
     session.filtered_rows = #rows

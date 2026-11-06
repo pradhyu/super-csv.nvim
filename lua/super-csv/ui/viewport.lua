@@ -60,6 +60,21 @@ function M.compute_visible_columns(session, win_width)
     end
   end
 
+  -- Backfill columns to the left of start_col if scrolled near the right edge and screen space remains
+  local back_col = start_col - 1
+  while back_col >= 1 and used < avail do
+    if not session.pinned_cols[back_col] and not session.hidden_cols[back_col] then
+      local w = session.col_widths[back_col] or 14
+      if used + w + 3 <= avail then
+        table.insert(scrollable, 1, back_col)
+        used = used + w + 3
+      else
+        break
+      end
+    end
+    back_col = back_col - 1
+  end
+
   -- If active cur_col is to the right of scrollable, advance left_col and recompute
   local cur = session.cur_col or 1
   if not session.pinned_cols[cur] and not session.hidden_cols[cur] then
@@ -139,19 +154,44 @@ function M.render(session)
   if not session or not session.view_buf or not vim.api.nvim_buf_is_valid(session.view_buf) then
     return
   end
+  require("super-csv.highlights").ensure_synced()
   config = require("super-csv.config")
   local win = session.view_win
   if not win or not vim.api.nvim_win_is_valid(win) then
     win = vim.fn.bufwinid(session.view_buf)
     session.view_win = win
   end
+  local is_headless = (#vim.api.nvim_list_uis() == 0)
+  local single_win = (#vim.api.nvim_tabpage_list_wins(0) <= 1)
   local win_width = (win and win ~= -1) and vim.api.nvim_win_get_width(win) or vim.o.columns
   local win_height = (win and win ~= -1) and vim.api.nvim_win_get_height(win) or (vim.o.lines - 4)
+  if is_headless and single_win then
+    local env_cols = tonumber(vim.env.COLUMNS) or 160
+    win_width = math.max(win_width, vim.o.columns > 80 and vim.o.columns or env_cols)
+    win_height = math.max(win_height, vim.o.lines > 24 and (vim.o.lines - 2) or 30)
+  end
   local has_winbar = (win and win ~= -1) and ((vim.wo[win].winbar or "") ~= "") or false
   local usable_height = win_height - (has_winbar and 1 or 0)
   local footer_lines = config.options.show_footer_stats and 3 or 2
 
-  local body_height = math.max(3, usable_height - 5 - footer_lines)
+  local comments = session.comments or {}
+  local num_comments = #comments
+  local max_inline_comments = math.max(4, math.min(num_comments, math.floor(usable_height * 0.45)))
+  if num_comments == max_inline_comments + 1 then
+    max_inline_comments = num_comments
+  end
+  local comment_section_lines = 0
+  if num_comments > 0 then
+    if session.comments_expanded then
+      comment_section_lines = 1 + max_inline_comments + (num_comments > max_inline_comments and 1 or 0)
+    else
+      comment_section_lines = 1
+    end
+  end
+  local header_lines_count = 5 + comment_section_lines
+  session.header_lines_count = header_lines_count
+
+  local body_height = math.max(3, usable_height - header_lines_count - footer_lines)
   session.page_size = body_height
 
   -- If streaming batches directly from file (before SQLite is indexed), load the next batch as the user scrolls near the edge
@@ -199,11 +239,11 @@ function M.render(session)
   session.vis_cols = vis_cols
 
   local lines = {}
-  local hl_ops = {} -- { line_0, col_start_byte, col_end_byte, hl_group }
+  local hl_ops = {} -- { line_0, col_start_byte, col_end_byte, hl_group, priority }
 
-  local function add_hl(l0, s_byte, e_byte, group)
+  local function add_hl(l0, s_byte, e_byte, group, prio)
     if group and e_byte > s_byte then
-      table.insert(hl_ops, { l0, s_byte, e_byte, group })
+      table.insert(hl_ops, { l0, s_byte, e_byte, group, prio or 200 })
     end
   end
 
@@ -243,17 +283,23 @@ function M.render(session)
   local row_summary = (active_filters > 0 or (session.grep_pattern and session.grep_pattern ~= ""))
     and string.format("Rows: %s / %s%s (Filtered)", fmt_num(total_filtered), fmt_num(session.total_rows or total_filtered), total_suffix)
     or string.format("Row %s / %s%s", fmt_num(session.cur_row), fmt_num(total_filtered), total_suffix)
-  local col_summary = string.format("Col %s #%d / %d", parser.col_to_excel(session.cur_col), session.cur_col, session.num_cols)
+
+  local last_vis_col = (#vis_cols > 0) and vis_cols[#vis_cols].col or session.cur_col
+  local more_right = math.max(0, session.num_cols - last_vis_col)
+  local col_range_hint = (more_right > 0) and string.format(" (+%d→ l/L)", more_right) or ""
+  local col_summary = string.format("Col %s #%d/%d%s", parser.col_to_excel(session.cur_col), session.cur_col, session.num_cols, col_range_hint)
   local filter_str = (#filter_tags > 0) and (" │ 󰈲 " .. table.concat(filter_tags, ", ")) or ""
   local grep_str = (session.grep_pattern and session.grep_pattern ~= "") and (" │  /" .. session.grep_pattern .. "/") or ""
+  local comment_badge_str = (num_comments > 0) and string.format(" │ 💬 %d [c/#]", num_comments) or ""
   local edit_str = ((session.edit_count or 0) > 0) and string.format(" │ ● %d unsaved", session.edit_count) or ""
 
   local banner = string.format(
-    " 󰈛 %s │ %s │ %s │ %s%s%s%s ",
+    " 󰈛 %s │ %s │ %s │ %s%s │ [?]Help%s%s%s ",
     vim.fn.fnamemodify(session.filepath, ":t"),
     engine_badge,
     row_summary,
     col_summary,
+    comment_badge_str,
     filter_str,
     grep_str,
     edit_str
@@ -279,6 +325,88 @@ function M.render(session)
   end
 
   local top_border = build_border("┏", "┳", "╦", "┓", "━")
+  local grid_display_w = vim.fn.strdisplaywidth(top_border)
+
+  -- 1b. Collapsible Top Comments Section (shows all `#` comments from anywhere in the CSV with their file line numbers)
+  if num_comments > 0 then
+    local lnums = {}
+    for i = 1, math.min(num_comments, 6) do
+      table.insert(lnums, "L" .. tostring(comments[i].line_num))
+    end
+    if num_comments > 6 then
+      table.insert(lnums, "… L" .. tostring(comments[num_comments].line_num))
+    end
+    local lnum_summary = table.concat(lnums, ", ")
+
+    session.comment_bar_line = #lines + 1
+    if not session.comments_expanded then
+      local first_preview = (comments[1].text or ""):gsub("^%s*#%s*", "# ")
+      local collapsed_bar = string.format(
+        " ▶ [c / # / z] Show # Comments (%d line%s: %s) — %s ",
+        num_comments,
+        num_comments == 1 and "" or "s",
+        lnum_summary,
+        first_preview
+      )
+      collapsed_bar = fit_width(collapsed_bar, win_width, false)
+      table.insert(lines, collapsed_bar)
+      add_hl(#lines - 1, 0, #collapsed_bar, "SuperCsvCommentBar")
+      session.comment_end_line = #lines
+    else
+      local expanded_bar = string.format(
+        " ▼ [c / # / z] Hide # Comments (%d line%s at top: %s) │ [g#] All Comments Popup ",
+        num_comments,
+        num_comments == 1 and "" or "s",
+        lnum_summary
+      )
+      expanded_bar = fit_width(expanded_bar, win_width, false)
+      table.insert(lines, expanded_bar)
+      add_hl(#lines - 1, 0, #expanded_bar, "SuperCsvCommentBar")
+
+      local box_w = math.max(grid_display_w, math.min(win_width, 90))
+      local text_avail = math.max(20, box_w - row_gutter_w - 5)
+      for i = 1, max_inline_comments do
+        local cm = comments[i]
+        local l_idx = #lines
+        local b_left = "┃"
+        local lnr_str = fit_width(string.format(" L%-4d", cm.line_num), row_gutter_w, false)
+        local b_mid = "│"
+        local c_body = " " .. fit_width(cm.text or "", text_avail, false) .. " "
+        local b_right = "┃"
+        local full_cm = b_left .. lnr_str .. b_mid .. c_body .. b_right
+        table.insert(lines, full_cm)
+
+        local p1 = #b_left
+        local p2 = p1 + #lnr_str
+        local p3 = p2 + #b_mid
+        local p4 = p3 + #c_body
+        add_hl(l_idx, 0, p1, "SuperCsvBorderPinned")
+        add_hl(l_idx, p1, p2, "SuperCsvCommentLineNr")
+        add_hl(l_idx, p2, p3, "SuperCsvBorder")
+        add_hl(l_idx, p3, p4, "SuperCsvComment")
+        add_hl(l_idx, p4, #full_cm, "SuperCsvBorderPinned")
+      end
+
+      if num_comments > max_inline_comments then
+        local more_cnt = num_comments - max_inline_comments
+        local l_idx = #lines
+        local b_left = "┃"
+        local lnr_str = fit_width("  ...", row_gutter_w, false)
+        local b_mid = "│"
+        local more_txt = string.format(" ... +%d more comment lines (press g# to view all %d comments)", more_cnt, num_comments)
+        local c_body = " " .. fit_width(more_txt, text_avail, false) .. " "
+        local b_right = "┃"
+        local full_more = b_left .. lnr_str .. b_mid .. c_body .. b_right
+        table.insert(lines, full_more)
+        add_hl(l_idx, 0, #full_more, "SuperCsvCommentBar")
+      end
+      session.comment_end_line = #lines
+    end
+  else
+    session.comment_bar_line = nil
+    session.comment_end_line = nil
+  end
+
   table.insert(lines, top_border)
   add_hl(#lines - 1, 0, #top_border, "SuperCsvBorderPinned")
 
@@ -383,10 +511,13 @@ function M.render(session)
       local seg_hls = {}
       local cur_byte = 0
 
-      local function push(txt, hl)
+      local function push(txt, hl, fg_hl)
         table.insert(segs, txt)
         if hl then
-          table.insert(seg_hls, { cur_byte, cur_byte + #txt, hl })
+          table.insert(seg_hls, { cur_byte, cur_byte + #txt, hl, 200 })
+        end
+        if fg_hl then
+          table.insert(seg_hls, { cur_byte, cur_byte + #txt, fg_hl, 210 })
         end
         cur_byte = cur_byte + #txt
       end
@@ -419,53 +550,78 @@ function M.render(session)
         -- Determine highlight group with Excel priority:
         -- Active Cell > Modified Cell > Grep Match > Heatmap > Active Row > Pinned Col > Alternating Row/Col
         local cell_hl
+        local fg_hl
         local is_mod = session.modified_cells and session.modified_cells[row_obj.rowid] and session.modified_cells[row_obj.rowid][c] ~= nil
         local is_grep_match = (session.grep_pattern and session.grep_pattern ~= "" and raw_val:lower():find(session.grep_pattern:lower(), 1, true) ~= nil)
         local is_even_row = (r_offset % 2 == 0)
         local is_even_col = (idx % 2 == 0)
+        local is_special_bg = false
 
         if is_cur_cell then
           cell_hl = "SuperCsvCursorCell"
+          is_special_bg = true
         elseif is_mod then
           cell_hl = "SuperCsvCellModified"
+          is_special_bg = true
         elseif is_grep_match then
           cell_hl = "SuperCsvCellMatch"
+          is_special_bg = true
         elseif col_minmax[c] and raw_val ~= "" then
           local nv = tonumber((raw_val:gsub("^%$", ""):gsub(",", "")))
           if nv then
             local ratio = (nv - col_minmax[c].min) / (col_minmax[c].max - col_minmax[c].min)
             cell_hl = (ratio >= 0.66) and "SuperCsvHeatHigh" or ((ratio >= 0.33) and "SuperCsvHeatMid" or "SuperCsvHeatLow")
+            is_special_bg = true
           end
-        elseif is_cur_row then
-          cell_hl = "SuperCsvCursorRow"
-        elseif vc.pinned then
-          if config.options.zebra_rows then
-            cell_hl = is_even_row and "SuperCsvColPinnedEven" or "SuperCsvColPinnedOdd"
-          else
-            cell_hl = "SuperCsvColPinned"
-          end
-        elseif config.options.zebra_rows and config.options.zebra_columns then
-          if is_even_row then
-            cell_hl = is_even_col and "SuperCsvRowEvenColEven" or "SuperCsvRowEvenColOdd"
-          else
-            cell_hl = is_even_col and "SuperCsvRowOddColEven" or "SuperCsvRowOddColOdd"
-          end
-        elseif config.options.zebra_rows then
-          cell_hl = is_even_row and "SuperCsvRowEvenColOdd" or "SuperCsvRowOddColOdd"
-        elseif config.options.zebra_columns then
-          cell_hl = is_even_col and "SuperCsvColEven" or "SuperCsvColOdd"
-        else
-          cell_hl = "SuperCsvColOdd"
         end
 
-        push(cell_str, cell_hl)
+        if not cell_hl then
+          if is_cur_row then
+            cell_hl = "SuperCsvCursorRow"
+          elseif vc.pinned then
+            if config.options.zebra_rows then
+              cell_hl = is_even_row and "SuperCsvColPinnedEven" or "SuperCsvColPinnedOdd"
+            else
+              cell_hl = "SuperCsvColPinned"
+            end
+          elseif config.options.zebra_rows and config.options.zebra_columns then
+            if is_even_row then
+              cell_hl = is_even_col and "SuperCsvRowEvenColEven" or "SuperCsvRowEvenColOdd"
+            else
+              cell_hl = is_even_col and "SuperCsvRowOddColEven" or "SuperCsvRowOddColOdd"
+            end
+          elseif config.options.zebra_rows then
+            cell_hl = is_even_row and "SuperCsvRowEvenColOdd" or "SuperCsvRowOddColOdd"
+          elseif config.options.zebra_columns then
+            cell_hl = is_even_col and "SuperCsvColEven" or "SuperCsvColOdd"
+          else
+            cell_hl = "SuperCsvColOdd"
+          end
+        end
+
+        if not is_special_bg then
+          if raw_val == "" then
+            fg_hl = "SuperCsvTypeNull"
+          elseif not vc.pinned then
+            local low = raw_val:lower()
+            if low == "true" then
+              fg_hl = "SuperCsvTypeBoolTrue"
+            elseif low == "false" then
+              fg_hl = "SuperCsvTypeBoolFalse"
+            elseif ctype == "i64" or ctype == "f64" then
+              fg_hl = "SuperCsvTypeNumber"
+            end
+          end
+        end
+
+        push(cell_str, cell_hl, fg_hl)
       end
 
       push("│", "SuperCsvBorder")
       local full_row = table.concat(segs)
       table.insert(lines, full_row)
       for _, h in ipairs(seg_hls) do
-        add_hl(l_idx, h[1], h[2], h[3])
+        add_hl(l_idx, h[1], h[2], h[3], h[4])
       end
     end
   end
@@ -514,11 +670,13 @@ function M.render(session)
 
   -- 5. Active Cell Inspector & Quick Keys Bar
   local cell_coord = string.format("%s%d", parser.col_to_excel(session.cur_col), active_rowid > 0 and active_rowid or session.cur_row)
+  local comment_key_hint = (num_comments > 0) and "[c/#]Comments " or ""
   local inspector_line = string.format(
-    " [%s] %s = %s │ [f]Filter [gv]Counts [g/]Grep [s/S]Sort [gp]Pin [gr]ZebraRows [<leader>cv]NormalCSV ",
+    " [%s] %s = %s │ [?]Help %s[f]Filter [gv]Counts [g/]Grep [s/S]Sort [gc]Cols [gp]Pin [<leader>cv]RawCSV ",
     cell_coord,
     session.headers[session.cur_col] or "",
-    active_cell_raw == "" and "NULL" or vim.inspect(active_cell_raw)
+    active_cell_raw == "" and "NULL" or vim.inspect(active_cell_raw),
+    comment_key_hint
   )
   inspector_line = fit_width(inspector_line, win_width, false)
   table.insert(lines, inspector_line)
@@ -535,7 +693,7 @@ function M.render(session)
     pcall(vim.api.nvim_buf_set_extmark, session.view_buf, ns, op[1], op[2], {
       end_col = op[3],
       hl_group = op[4],
-      priority = 200,
+      priority = op[5] or 200,
     })
   end
 
@@ -543,7 +701,8 @@ function M.render(session)
   if win and vim.api.nvim_win_is_valid(win) then
     vim.wo[win].scrolloff = 0
     vim.wo[win].sidescrolloff = 0
-    local target_buf_line = math.max(6, math.min(#lines - footer_lines, 6 + (session.cur_row - session.top_row)))
+    local first_data_line = (session.header_lines_count or 5) + 1
+    local target_buf_line = math.max(first_data_line, math.min(#lines - footer_lines, first_data_line + (session.cur_row - session.top_row)))
     pcall(vim.api.nvim_win_call, win, function()
       vim.fn.winrestview({
         topline = 1,

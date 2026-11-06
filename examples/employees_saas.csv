@@ -1,3 +1,6 @@
+# Dataset: Acme Cloud Global Employee Directory (FY2026)
+# Schema: 16 columns | Exported from Workday HRIS v4.2
+# Press '#' or 'z' (or click the comment bar) to expand/collapse comments!
 emp_id,full_name,email,department,team,role,level,location,country,salary_usd,bonus_pct,equity_shares,is_remote,hire_date,perf_rating,status
 EMP-1001,Hannah Jensen,hannah.jensen.1@acme-cloud.io,Product,Developer Experience,Group PM,L5,San Francisco,US,173134,10,9159,false,2021-10-27,Meets,ACTIVE
 EMP-1002,Omar Muller,omar.muller.2@acme-cloud.io,Product,Growth,Group PM,L5,San Francisco,US,163461,10,8476,false,2026-08-01,Strongly Exceeds,ACTIVE
@@ -59,6 +62,7 @@ EMP-1057,Aria Nguyen,aria.nguyen.57@acme-cloud.io,Engineering,Core DB,Staff Engi
 EMP-1058,Zoe Kowalski,zoe.kowalski.58@acme-cloud.io,Operations,Finance,Recruiter,L5,Singapore,SG,177941,10,8852,true,2019-12-07,Needs Improvement,ACTIVE
 EMP-1059,Liam Kim,liam.kim.59@acme-cloud.io,Product,Developer Experience,Group PM,L6,Tokyo,JP,208192,20,10571,false,2024-10-16,Meets,ACTIVE
 EMP-1060,Omar Nguyen,omar.nguyen.60@acme-cloud.io,Data Science,Forecasting,ML Engineer,L7,San Francisco,US,238782,25,12544,false,2026-06-19,Needs Improvement,ON_LEAVE
+# [MID-FILE CHECKPOINT @ Row 60] EMEA & APAC regional compensation sync verified
 EMP-1061,Ethan Vance,ethan.vance.61@acme-cloud.io,Data Science,Forecasting,Analytics Engineer,L8,Austin,US,256370,30,16488,true,2025-03-07,New Hire,CONTRACTOR
 EMP-1062,Chloe Patel,chloe.patel.62@acme-cloud.io,Operations,Finance,Recruiter,L4,San Francisco,US,138039,10,6858,true,2019-12-04,Exceeds,ACTIVE
 EMP-1063,Noah Silva,noah.silva.63@acme-cloud.io,Operations,Legal,Recruiter,L7,Seattle,US,234552,25,14438,false,2023-04-11,Meets,ACTIVE
@@ -119,3 +123,4 @@ EMP-1117,Mateo Vance,mateo.vance.117@acme-cloud.io,Product,Growth,Group PM,L8,To
 EMP-1118,Priya Sato,priya.sato.118@acme-cloud.io,Data Science,Forecasting,ML Engineer,L3,Toronto,CA,111101,10,3378,false,2025-12-27,Strongly Exceeds,ACTIVE
 EMP-1119,Devon Smith,devon.smith.119@acme-cloud.io,Data Science,Forecasting,Data Scientist,L4,New York,US,147891,10,5791,true,2019-07-07,Strongly Exceeds,ACTIVE
 EMP-1120,Maya Vance,maya.vance.120@acme-cloud.io,Operations,Finance,Recruiter,L8,Singapore,SG,262037,30,15835,false,2021-01-16,Needs Improvement,ACTIVE
+# [END OF EXPORT] 120 active/contractor employee records verified

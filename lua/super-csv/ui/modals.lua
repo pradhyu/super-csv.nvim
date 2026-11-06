@@ -695,4 +695,150 @@ function M.open_sql_runner(session, initial_sql)
   end
 end
 
+--- 7. CSV Comments Inspector Popup (`g#` / `:SuperCsv comments_popup`)
+function M.open_comments_viewer(session)
+  local comments = session.comments or {}
+  if #comments == 0 then
+    vim.notify("[SuperCsv] No `#` comment lines in this CSV file", vim.log.levels.INFO)
+    return
+  end
+
+  local lines = {
+    string.format(" 💬 CSV Comments (%d lines gathered across file)", #comments),
+    " [<CR>] Jump to Nearby Data Row   [z / #] Toggle Top Inline Panel   [q] Close",
+    string.rep("─", 88),
+    string.format(" %-7s │ %-14s │ %s", "Line #", "Location", "Comment Text"),
+    string.rep("─", 88),
+  }
+
+  for _, cm in ipairs(comments) do
+    local loc
+    if cm.before_header then
+      loc = "Top Header"
+    elseif (cm.after_rowid or 0) == 0 then
+      loc = "After Header"
+    elseif session.total_rows and (cm.after_rowid or 0) >= session.total_rows then
+      loc = "Bottom Footer"
+    else
+      loc = string.format("After Row #%d", cm.after_rowid or 0)
+    end
+    table.insert(lines, string.format(" L%-6d │ %-14s │ %s", cm.line_num, loc, cm.text or ""))
+  end
+
+  local buf, win = create_float("CSV Comments Inspector", 92, math.min(28, #lines + 2), true)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  vim.api.nvim_buf_add_highlight(buf, modal_ns, "SuperCsvHeaderBanner", 0, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, modal_ns, "SuperCsvFooterCell", 1, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, modal_ns, "SuperCsvHeaderNormal", 3, 0, -1)
+  for i = 1, #comments do
+    vim.api.nvim_buf_add_highlight(buf, modal_ns, "SuperCsvCommentLineNr", 4 + i, 0, 9)
+    vim.api.nvim_buf_add_highlight(buf, modal_ns, "SuperCsvComment", 4 + i, 28, -1)
+  end
+
+  pcall(vim.api.nvim_win_set_cursor, win, { 6, 1 })
+
+  local function close_modal()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+
+  vim.keymap.set("n", "<CR>", function()
+    local lnum = vim.api.nvim_win_get_cursor(win)[1]
+    local cm = comments[lnum - 5]
+    if cm then
+      local target_row = math.max(1, math.min(session.filtered_rows or session.total_rows or 1, (cm.after_rowid or 0) + 1))
+      session.cur_row = target_row
+      session.top_row = math.max(1, target_row - 3)
+      close_modal()
+      viewport.render(session)
+    end
+  end, { buffer = buf, nowait = true })
+
+  for _, k in ipairs({ "c", "z", "#" }) do
+    vim.keymap.set("n", k, function()
+      session.comments_expanded = not session.comments_expanded
+      close_modal()
+      viewport.render(session)
+    end, { buffer = buf, nowait = true })
+  end
+
+  vim.keymap.set("n", "q", close_modal, { buffer = buf, nowait = true })
+  vim.keymap.set("n", "<Esc>", close_modal, { buffer = buf, nowait = true })
+end
+
+--- 8. Keyboard Shortcuts & Commands Help Modal (`?` / `g?` / `<F1>` / `:SuperCsv help`)
+function M.open_help(_session)
+  local lines = {
+    " 󰈛 SuperCsv.nvim — Keyboard Shortcuts & Commands Reference",
+    " Press [q], [?], or [<Esc>] to close this window",
+    string.rep("─", 86),
+    " 💬 CSV COMMENTS (#)",
+    "   c / # / z / za     │ Toggle (Show / Hide) collapsible # comments panel at top",
+    "   zo / zc            │ Explicitly Expand (zo) or Collapse (zc) top # comments panel",
+    "   g# / <leader>c#    │ Open scrollable CSV Comments Inspector popup (with row jump)",
+    "   <LeftMouse>        │ Click the top comment bar to expand / collapse comments",
+    string.rep("─", 86),
+    " 🧭 2D GRID NAVIGATION",
+    "   l / w / <Tab>      │ Next column right       h / b / <S-Tab> │ Previous column left",
+    "   L / H              │ Page right / left cols  0 / $           │ First / Last column",
+    "   j / k / <Up>/<Dn>  │ Next / Previous row     gg / G / [n]G   │ First / Last / Row N",
+    "   <C-d> / <C-u>      │ Half-page down / up     <C-f> / <C-b>   │ Full-page down / up",
+    "   gG                 │ Prompt to jump to row # gc / <leader>cc │ 100-Col Fuzzy Jumper",
+    string.rep("─", 86),
+    " 󰈲 FILTERING, GREP & SORTING",
+    "   f                  │ Open Excel AutoFilter modal (check/uncheck distinct values)",
+    "   /                  │ Filter current column by expression (> 100, = US, contains x)",
+    "   fv / fx            │ Quick filter column == active cell (fv) or != active cell (fx)",
+    "   F / <leader>cF     │ Clear filter on current column (F) or clear all filters/grep",
+    "   g/                 │ Global grep search across all columns simultaneously",
+    "   s / S              │ Sort current column Ascending ▲ (s) or Descending ▼ (S)",
+    string.rep("─", 86),
+    " 📊 ANALYTICS, RECORD CARD & SQL",
+    "   gv                 │ Value Counts & Group-By frequency distribution modal",
+    "   gs                 │ Column Summary Statistics (COUNT, DISTINCT, SUM, AVG, MIN, MAX)",
+    "   K / <leader>cr     │ Toggle synchronized 100-Column Vertical Record Card split",
+    "   gq / <leader>cq    │ Run custom SQL query against table `csv` (or `csv_data`)",
+    string.rep("─", 86),
+    " 🔒 FREEZE PANES, COLUMN WIDTHS & VIEW",
+    "   gp                 │ Toggle Pin / Freeze 🔒 on current column",
+    "   gh / gH            │ Hide current column (gh) / Restore all hidden columns (gH)",
+    "   + / - / =          │ Widen (+) / Narrow (-) / Auto-fit (=) current column width",
+    "   gm                 │ Toggle conditional numeric Heatmap coloring",
+    "   gr / gz            │ Toggle alternating Row (gr) / Column (gz) zebra striping",
+    "   <leader>cv         │ Switch back and forth between SuperCsv 2D grid & raw CSV text",
+    string.rep("─", 86),
+    " ✏️ EDITING, UNDO/REDO & SAVING",
+    "   i / <CR> / <F2>    │ Edit active cell        o / dd          │ Insert / Delete row",
+    "   yy / Y             │ Yank cell / Row as JSON u / <C-r>       │ Undo / Redo edit",
+    "   <leader>cw / :w    │ Save edits to CSV file  ? / :SuperCsv ? │ Show this Help modal",
+  }
+
+  local buf, win = create_float("SuperCsv Shortcuts & Help (?)", 88, math.min(vim.o.lines - 4, #lines), true)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  vim.api.nvim_buf_add_highlight(buf, modal_ns, "SuperCsvHeaderBanner", 0, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, modal_ns, "SuperCsvFooterCell", 1, 0, -1)
+  for idx, l in ipairs(lines) do
+    if l:match("^ 💬") or l:match("^ 🧭") or l:match("^ 󰈲") or l:match("^ 📊") or l:match("^ 🔒") or l:match("^ ✏️") then
+      vim.api.nvim_buf_add_highlight(buf, modal_ns, "SuperCsvHeaderNormal", idx - 1, 0, -1)
+    end
+  end
+
+  local function close_modal()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+  for _, k in ipairs({ "q", "?", "<Esc>" }) do
+    vim.keymap.set("n", k, close_modal, { buffer = buf, nowait = true, silent = true })
+  end
+  return buf, win
+end
+
 return M
