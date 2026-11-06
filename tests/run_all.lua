@@ -221,6 +221,162 @@ assert_eq(hl_odd_2.bg, 0x1a1b26, "SuperCsvRowOddColOdd bg updates to TokyoNight 
 assert_eq(hl_odd_2.fg, 0xc0caf5, "SuperCsvRowOddColOdd fg updates to TokyoNight Normal fg (#c0caf5)")
 assert_eq(hl_hdr_2.fg, 0x7aa2f7, "SuperCsvHeaderBanner fg updates to TokyoNight Title fg (#7aa2f7)")
 
+-- 10d. Test JSON-to-CSV Conversion & Visualizing JSON as CSV (Maps as columns vs Arrays as Subtables)
+local json_engine = require("super-csv.engine.json")
+local json_path = "/home/pkshrestha/git/super-csv.nvim/examples/saas_metrics.json"
+local s_json = super_csv.open(json_path)
+assert_true(s_json ~= nil, "Opened saas_metrics.json directly in SuperCsv 2D viewport")
+assert_eq(s_json.source_json_path, json_path, "Session tracks source_json_path")
+assert_eq(s_json.total_rows, 30, "saas_metrics.json has 30 rows")
+assert_eq(s_json.num_cols, 20, "saas_metrics.json flattened Maps/Maps-of-Maps and kept Arrays as Subtables (20 columns)")
+assert_eq(s_json.headers[1], "tenant_id", "Preserved JSON key order: Col 1 is tenant_id")
+-- Map -> parentkey.mapkey columns
+assert_eq(s_json.headers[6], "account.owner", "Map flattened: Col 6 is account.owner")
+assert_eq(s_json.headers[7], "account.seats", "Map flattened: Col 7 is account.seats")
+assert_eq(s_json.headers[8], "account.churn_risk", "Map flattened: Col 8 is account.churn_risk")
+assert_eq(s_json.headers[9], "metrics.mrr_usd", "Map flattened: Col 9 is metrics.mrr_usd")
+-- Map of Map -> parentkey.mapkey.subkey columns
+assert_eq(s_json.headers[12], "infrastructure.compute.vcpu", "Map-of-Map flattened: Col 12 is infrastructure.compute.vcpu")
+assert_eq(s_json.headers[13], "infrastructure.compute.ram_gb", "Map-of-Map flattened: Col 13 is infrastructure.compute.ram_gb")
+assert_eq(s_json.headers[14], "infrastructure.network.region", "Map-of-Map flattened: Col 14 is infrastructure.network.region")
+assert_eq(s_json.headers[15], "infrastructure.network.cdn_enabled", "Map-of-Map flattened: Col 15 is infrastructure.network.cdn_enabled")
+-- List of Map -> single [tbl] Subtable column
+assert_eq(s_json.headers[16], "deployments", "List-of-Map is Subtable column: Col 16 is deployments")
+assert_eq(s_json.types[16], "tbl", "deployments column inferred as [tbl] Subtable type")
+-- Map of Lists -> parentkey.listkey [arr] Subtable columns
+assert_eq(s_json.headers[17], "environments.prod", "Map-of-Lists flattened map & kept list as Subtable: Col 17 is environments.prod")
+assert_eq(s_json.headers[18], "environments.staging", "Map-of-Lists flattened map & kept list as Subtable: Col 18 is environments.staging")
+assert_eq(s_json.types[17], "arr", "environments.prod column inferred as [arr] Subtable type")
+-- List of Scalars -> single [arr] Subtable column
+assert_eq(s_json.headers[19], "tags", "List-of-Scalars is Subtable column: Col 19 is tags")
+assert_eq(s_json.types[19], "arr", "tags column inferred as [arr] Subtable type")
+assert_true(#s_json.comments == 1 and s_json.comments[1].text:find("JSON Metadata") ~= nil, "Extracted top-level JSON metadata into # comment")
+
+-- Verify multi-level 'TABLE' parent header band & leaf attribute headers in viewport
+local json_grid_lines = vim.api.nvim_buf_get_lines(s_json.view_buf, 0, 8, false)
+assert_true(json_grid_lines[5]:find("TABLE") ~= nil and json_grid_lines[5]:find("account %(3 cols%)") ~= nil, "Viewport renders spanned parent TABLE header for nested JSON objects")
+assert_true(json_grid_lines[6]:find("owner") ~= nil and json_grid_lines[6]:find("seats") ~= nil and json_grid_lines[6]:find("churn_risk") ~= nil, "Viewport renders clean leaf attribute names under parent TABLE header")
+
+-- Focus on Subtable column (deployments, col 16) and verify Inline Embedded Subtable + Subtable Drill-down (<CR>)
+s_json.cur_col = 16
+s_json.left_col = 12
+viewport.render(s_json)
+local sub_grid_lines = vim.api.nvim_buf_get_lines(s_json.view_buf, 0, 20, false)
+local all_sub_text = table.concat(sub_grid_lines, "\n")
+assert_true(all_sub_text:find("Subtable %[deployments%]") ~= nil, "Viewport renders inline embedded SUBTABLE beneath active row when focused on [tbl] cell")
+assert_true(all_sub_text:find("api%-gateway") ~= nil and all_sub_text:find("worker%-pool") ~= nil, "Inline embedded subtable displays child rows (api-gateway, worker-pool)")
+
+local child_sub = super_csv.open_subtable(s_json)
+assert_true(child_sub ~= nil, "Drilled down into deployments Subtable via open_subtable")
+assert_eq(child_sub.total_rows, 2, "Drilled-down deployments Subtable has 2 rows")
+assert_eq(child_sub.num_cols, 3, "Drilled-down deployments Subtable has 3 columns (service, status, replicas)")
+assert_eq(child_sub.headers[1], "service", "Subtable Col 1 is service")
+assert_eq(child_sub.headers[2], "status", "Subtable Col 2 is status")
+assert_eq(child_sub.headers[3], "replicas", "Subtable Col 3 is replicas")
+assert_true(super_csv.close_subtable(child_sub), "Popped back from Subtable to parent session via close_subtable")
+s_json.cur_col = 1
+s_json.left_col = 1
+viewport.render(s_json)
+
+-- Filter on flattened JSON column in SQLite
+super_csv.apply_filter_expr(s_json, 3, "= ENTERPRISE")
+assert_true(s_json.filtered_rows > 0 and s_json.filtered_rows < 30, "Filtered JSON records by plan == ENTERPRISE")
+super_csv.command("filter_clear")
+assert_eq(s_json.filtered_rows, 30, "Cleared filter on JSON session restores 30 rows")
+
+-- Toggle from JSON 2D grid back to raw JSON buffer and back
+super_csv.command("toggle")
+assert_eq(vim.api.nvim_buf_get_name(0), json_path, "Toggle switched back to raw saas_metrics.json buffer")
+super_csv.command("toggle")
+assert_eq(vim.bo.filetype, "supercsv", "Second toggle returned from raw JSON to SuperCsv 2D viewport")
+
+-- Test direct JSON-to-CSV file conversion and JSONL parsing
+local tmp_csv = "/tmp/test_saas_metrics_converted.csv"
+local ok_conv, conv_path, conv_info = super_csv.json_to_csv(json_path, tmp_csv)
+assert_true(ok_conv, "json_to_csv converted saas_metrics.json to " .. tostring(conv_path))
+assert_eq(conv_info.num_rows, 30, "Converted CSV has 30 rows")
+assert_eq(conv_info.num_cols, 20, "Converted CSV has 20 columns")
+os.remove(tmp_csv)
+
+-- Test Map, Map-of-Map, List-of-Map, and Map-of-Lists design
+local nested_tbl_json = [[
+[
+  {
+    "order_id": 101,
+    "customer": { "name": "Aria", "address": { "city": "SF", "zip": "94107" } },
+    "items": [
+      { "sku": "NVME", "qty": 2, "spec": { "gen": 4 } },
+      { "sku": "OLED", "qty": 1, "spec": { "gen": 3 } }
+    ],
+    "permissions": {
+      "read": ["eng", "ops"],
+      "write": ["admin"]
+    }
+  }
+]
+]]
+local nested_parsed = json_engine.parse_json_text(nested_tbl_json)
+assert_true(nested_parsed ~= nil, "Parsed deeply nested JSON (Map, Map-of-Map, List-of-Map, Map-of-Lists)")
+assert_eq(#nested_parsed.headers, 7, "Maps expanded to parentkey.mapkey columns and Lists kept as Subtable columns (7 columns)")
+assert_eq(nested_parsed.headers[1], "order_id", "Col 1 is order_id")
+assert_eq(nested_parsed.headers[2], "customer.name", "Col 2 is customer.name (Map)")
+assert_eq(nested_parsed.headers[3], "customer.address.city", "Col 3 is customer.address.city (Map of Map)")
+assert_eq(nested_parsed.headers[4], "customer.address.zip", "Col 4 is customer.address.zip (Map of Map)")
+assert_eq(nested_parsed.headers[5], "items", "Col 5 is items (List of Map -> Subtable)")
+assert_eq(nested_parsed.headers[6], "permissions.read", "Col 6 is permissions.read (Map of Lists -> Subtable)")
+assert_eq(nested_parsed.headers[7], "permissions.write", "Col 7 is permissions.write (Map of Lists -> Subtable)")
+
+local items_sub = json_engine.parse_subtable_cell(nested_parsed.rows[1][5])
+assert_true(items_sub ~= nil and items_sub.kind == "tbl", "Parsed items cell as Subtable of objects ([tbl])")
+assert_eq(#items_sub.rows, 2, "items Subtable has 2 rows")
+assert_eq(items_sub.headers[1], "sku", "items Subtable Col 1 is sku")
+assert_eq(items_sub.headers[2], "qty", "items Subtable Col 2 is qty")
+assert_eq(items_sub.headers[3], "spec.gen", "items Subtable flattened nested map spec.gen into Col 3")
+
+local jsonl_parsed = json_engine.parse_json_text('// JSONL header comment\n{"id":1,"user":{"name":"Ada"},"url":"https://ada.dev","ok":true} // inline comment\n{"id":2,"user":{"name":"Linus"},"url":"https://kernel.org","ok":false}\n')
+assert_true(jsonl_parsed ~= nil, "Parsed JSONL with default '//' comments and inline '//' comments")
+assert_eq(#jsonl_parsed.rows, 2, "JSONL has 2 rows")
+assert_eq(jsonl_parsed.headers[1], "id", "JSONL Col 1 is id")
+assert_eq(jsonl_parsed.headers[2], "user.name", "JSONL Col 2 is user.name")
+assert_eq(jsonl_parsed.rows[1][3], "https://ada.dev", "URL containing '//' inside JSON string was preserved intact")
+assert_eq(#jsonl_parsed.comments, 2, "JSONL extracted both full-line and inline '//' comments")
+
+-- Test JSONC with '//' comments and trailing commas
+local jsonc_text = [[
+// Top JSONC comment line 1
+// Top JSONC comment line 2
+[
+  {
+    "id": 10, // inline id comment
+    "name": "Service A",
+    "endpoint": "https://api.internal/v1",
+  },
+  // Mid-array JSONC comment
+  {
+    "id": 20,
+    "name": "Service B",
+    "endpoint": "https://api.internal/v2",
+  },
+]
+]]
+local jsonc_parsed = json_engine.parse_json_text(jsonc_text)
+assert_true(jsonc_parsed ~= nil, "Parsed JSONC with '//' comments and trailing commas")
+assert_eq(#jsonc_parsed.rows, 2, "JSONC has 2 rows")
+assert_eq(#jsonc_parsed.comments, 4, "JSONC extracted 4 '//' comments (2 top, 1 inline, 1 mid-array)")
+assert_eq(jsonc_parsed.comment_items[1].line_num, 1, "First JSONC comment at L1")
+assert_eq(jsonc_parsed.comment_items[3].line_num, 5, "Inline JSONC comment at L5")
+assert_eq(jsonc_parsed.comment_items[4].line_num, 9, "Mid-array JSONC comment at L9")
+
+-- Test configurable comment prefixes (default '#' for CSV, '//' for JSON, and custom overrides)
+assert_eq(cfg.get_csv_comment_char(), "#", "Default CSV comment_char is '#'")
+assert_eq(cfg.get_json_comment_char(), "//", "Default JSON json_comment_char is '//'")
+super_csv.command("json_comment_char #")
+assert_eq(cfg.get_json_comment_char(), "#", "Updated JSON comment prefix to '#' via command")
+local custom_json_parsed = json_engine.parse_json_text('# Custom hash comment in JSON\n[{"col":"val"}]\n')
+assert_true(custom_json_parsed ~= nil and #custom_json_parsed.comments == 1, "Parsed JSON with custom '#' comment_char")
+super_csv.command("json_comment_char //")
+assert_eq(cfg.get_json_comment_char(), "//", "Restored JSON comment prefix to '//'")
+
 -- 11. Test 1,000,000-row x 100-column CSV initial slice open (< 35ms)
 local million_path = "/home/pkshrestha/git/super-csv.nvim/examples/million_100cols.csv"
 if vim.fn.filereadable(million_path) == 1 then

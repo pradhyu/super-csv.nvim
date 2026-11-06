@@ -477,6 +477,98 @@ do
   })
 end
 
+-- 8. examples/saas_metrics.json (30 records with Map, Map-of-Map, List-of-Map, Map-of-Lists, List-of-Scalars & wrapper metadata)
+do
+  local json_path = examples_dir .. "/saas_metrics.json"
+  local f = assert(io.open(json_path, "wb"))
+  local plans = { "ENTERPRISE", "BUSINESS", "GROWTH", "STARTER" }
+  local regions = { "US-EAST", "US-WEST", "EU-CENTRAL", "APAC-TOKYO" }
+  local owners = { "Aria Patel", "Liam Chen", "Maya Garcia", "Noah Kim", "Elena Silva" }
+  local items = {}
+  for r = 1, 30 do
+    local mrr = 1200 + (r * 450) % 18000
+    local active = (r % 6 ~= 0)
+    local churn_risk = (r % 8 == 0) and "HIGH" or "LOW"
+    local notes_str = (r % 5 == 0) and "null" or string.format('"Q%d renewal scheduled"', (r % 4) + 1)
+    local vcpu = 4 * ((r % 4) + 1)
+    local ram_gb = vcpu * 4
+    local cdn_enabled = (r % 2 == 0) and "true" or "false"
+    local worker_status = (r % 7 == 0) and "DEGRADED" or "HEALTHY"
+    table.insert(items, string.format(
+      [[    {
+      "tenant_id": "TNT-%04d",
+      "company": "%s-%02d",
+      "plan": "%s",
+      "region": "%s",
+      "is_active": %s,
+      "account": {
+        "owner": "%s",
+        "seats": %d,
+        "churn_risk": "%s"
+      },
+      "metrics": {
+        "mrr_usd": %.2f,
+        "arr_usd": %.2f,
+        "uptime_pct": %.2f
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": %d,
+          "ram_gb": %d
+        },
+        "network": {
+          "region": "%s",
+          "cdn_enabled": %s
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": %d },
+        { "service": "worker-pool", "status": "%s", "replicas": %d }
+      ],
+      "environments": {
+        "prod": ["%s-1a", "%s-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "%s"],
+      "notes": %s
+    }]],
+      r,
+      wide_tenants[(r % #wide_tenants) + 1],
+      r,
+      plans[(r % #plans) + 1],
+      regions[(r % #regions) + 1],
+      active and "true" or "false",
+      owners[(r % #owners) + 1],
+      10 + (r * 7) % 240,
+      churn_risk,
+      mrr,
+      mrr * 12.0,
+      99.50 + ((r * 3) % 50) * 0.01,
+      vcpu,
+      ram_gb,
+      regions[(r % #regions) + 1]:lower(),
+      cdn_enabled,
+      2 + (r % 4),
+      worker_status,
+      1 + (r % 3),
+      regions[(r % #regions) + 1]:lower(),
+      regions[(r % #regions) + 1]:lower(),
+      plans[(r % #plans) + 1]:lower(),
+      notes_str
+    ))
+  end
+  f:write("{\n")
+  f:write('  "export_version": "2026.11",\n')
+  f:write('  "source": "stripe-analytics-pipeline",\n')
+  f:write('  "total_records": 30,\n')
+  f:write('  "data": [\n')
+  f:write(table.concat(items, ",\n") .. "\n")
+  f:write("  ]\n")
+  f:write("}\n")
+  f:close()
+  print(string.format("[OK] Wrote %s (30 nested JSON records)", json_path))
+end
+
 -- Optional: --million flag generates examples/million_100cols.csv (1,000,000 rows x 100 columns)
 for _, a in ipairs(arg or {}) do
   if a == "--million" then

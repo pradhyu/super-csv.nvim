@@ -3,6 +3,7 @@ local M = {}
 local config = require("super-csv.config")
 local highlights = require("super-csv.highlights")
 local parser = require("super-csv.engine.parser")
+local json_engine = require("super-csv.engine.json")
 local sqlite = require("super-csv.engine.sqlite")
 local viewport = require("super-csv.ui.viewport")
 local modals = require("super-csv.ui.modals")
@@ -499,6 +500,14 @@ local function attach_keymaps(session)
     vim.notify("[SuperCsv] Numeric Heatmap: " .. (cfg.options.heatmap and "ON" or "OFF"))
   end, "Toggle Numeric Heatmap")
 
+  map("gR", function()
+    local cfg = require("super-csv.config")
+    cfg.options.rainbow_columns = not cfg.options.rainbow_columns
+    cfg.save_persisted()
+    require("super-csv.ui.viewport").render(session)
+    vim.notify("[SuperCsv] Rainbow CSV Columns: " .. (cfg.options.rainbow_columns and "ON (saved)" or "OFF (saved)"))
+  end, "Toggle Rainbow CSV Column Colors")
+
   map("gr", function()
     local cfg = require("super-csv.config")
     cfg.options.zebra_rows = not cfg.options.zebra_rows
@@ -517,7 +526,23 @@ local function attach_keymaps(session)
 
   map("<leader>cv", function()
     M.switch_to_normal_csv(session)
-  end, "Switch Back to Normal Raw CSV Buffer")
+  end, "Switch Back to Normal Raw CSV / JSON Buffer")
+
+  map("<leader>cj", function()
+    local src_json = session.source_json_path
+    local default_out
+    if src_json and src_json ~= "" then
+      default_out = src_json:gsub("%.ndjson$", ""):gsub("%.jsonl$", ""):gsub("%.jsonc$", ""):gsub("%.json$", "") .. ".csv"
+    else
+      default_out = session.filepath:gsub("%.csv$", "") .. "_converted.csv"
+    end
+    local ok, err = sqlite.save_to_csv(session, default_out, false)
+    if ok then
+      vim.notify(string.format("[SuperCsv] Converted & saved CSV to %s", default_out))
+    else
+      vim.notify("[SuperCsv Convert Error] " .. tostring(err), vim.log.levels.ERROR)
+    end
+  end, "Save / Convert Current Table to .csv File")
 
   -- 5b. Collapsible Top CSV Comments (`c`, `#`, `z`, `za`, `zo`, `zc`, `C`, `<leader>cm`, `g#`, `<leader>c#`)
   local function toggle_comments(force_state)
@@ -574,14 +599,37 @@ local function attach_keymaps(session)
     viewport.render(session)
   end, "Auto-Fit Current Column Width")
 
-  -- 6. Cell Editing, Row Insert/Delete, Yank, Undo/Redo/Cancel, Save
+  -- 6. Cell Editing, Subtable Drill-Down, Row Insert/Delete, Yank, Undo/Redo/Cancel, Save
   local function edit_active_cell()
     modals.open_cell_editor(session)
   end
 
   map("i", edit_active_cell, "Edit Active Cell")
   map("<F2>", edit_active_cell, "Edit Active Cell")
-  map("<CR>", edit_active_cell, "Edit Active Cell")
+  map("<CR>", function()
+    if M.open_subtable(session) then
+      return
+    end
+    edit_active_cell()
+  end, "Drill into Subtable Cell or Edit Active Cell")
+
+  map("gd", function()
+    if not M.open_subtable(session) then
+      vim.notify("[SuperCsv] Current cell is not a nested Subtable ([tbl]/[arr])", vim.log.levels.INFO)
+    end
+  end, "Drill Down into Nested Subtable Cell")
+
+  map("gt", function()
+    session.inline_subtable = (session.inline_subtable == false) and true or false
+    viewport.render(session)
+    vim.notify("[SuperCsv] Inline Embedded Subtable: " .. (session.inline_subtable and "ON" or "OFF"))
+  end, "Toggle Inline Embedded Subtable Preview")
+
+  map("<BS>", function()
+    if not M.close_subtable(session) then
+      step_col(session, -1)
+    end
+  end, "Return from Subtable to Parent Table (or Previous Column)")
 
   map("<Esc>", function()
     if session._cell_edit_win and vim.api.nvim_win_is_valid(session._cell_edit_win) then
@@ -598,8 +646,12 @@ local function attach_keymaps(session)
       local ok, msg = sqlite.undo(session)
       viewport.render(session)
       vim.notify("[SuperCsv] " .. msg, ok and vim.log.levels.INFO or vim.log.levels.WARN)
+      return
     end
-  end, "Cancel Open Editor / Record Split / Last Accidental Edit")
+    if session.parent_session then
+      M.close_subtable(session)
+    end
+  end, "Cancel Open Editor / Record Split / Undo / Return to Parent Table")
 
   map("o", function()
     local new_id = sqlite.insert_row(session, {})
@@ -689,14 +741,17 @@ function M.apply_filter_expr(session, col_idx, expr)
   viewport.render(session)
 end
 
---- Switch from the SuperCsv 2D Excel Viewport back to the normal raw CSV buffer
+--- Switch from the SuperCsv 2D Excel Viewport back to the normal raw CSV or JSON buffer
 function M.switch_to_normal_csv(session)
   session = session or M.get_active_session()
   if not session then
     return
   end
-  local filepath = session.filepath
-  M.disabled_paths[filepath] = true
+  local raw_target_path = session.source_json_path or session.filepath
+  M.disabled_paths[session.filepath] = true
+  if session.source_json_path then
+    M.disabled_paths[session.source_json_path] = true
+  end
 
   if session.record_win and vim.api.nvim_win_is_valid(session.record_win) then
     pcall(vim.api.nvim_win_close, session.record_win, true)
@@ -704,15 +759,21 @@ function M.switch_to_normal_csv(session)
   end
 
   local win = vim.api.nvim_get_current_win()
-  -- Find or load the raw file buffer
-  local raw_buf = vim.fn.bufnr(filepath)
-  if raw_buf == -1 or raw_buf == session.view_buf then
-    vim.cmd("edit " .. vim.fn.fnameescape(filepath))
-    raw_buf = vim.api.nvim_get_current_buf()
-  else
+  local raw_buf = -1
+
+  if session.source_json_buf and vim.api.nvim_buf_is_valid(session.source_json_buf) and session.source_json_buf ~= session.view_buf then
+    raw_buf = session.source_json_buf
     vim.api.nvim_win_set_buf(win, raw_buf)
-    if vim.api.nvim_buf_line_count(raw_buf) <= 1 and vim.api.nvim_buf_get_lines(raw_buf, 0, 1, false)[1] == "" then
-      vim.cmd("edit! " .. vim.fn.fnameescape(filepath))
+  else
+    raw_buf = vim.fn.bufnr(raw_target_path)
+    if raw_buf == -1 or raw_buf == session.view_buf then
+      vim.cmd("edit " .. vim.fn.fnameescape(raw_target_path))
+      raw_buf = vim.api.nvim_get_current_buf()
+    else
+      vim.api.nvim_win_set_buf(win, raw_buf)
+      if vim.api.nvim_buf_line_count(raw_buf) <= 1 and vim.api.nvim_buf_get_lines(raw_buf, 0, 1, false)[1] == "" then
+        vim.cmd("edit! " .. vim.fn.fnameescape(raw_target_path))
+      end
     end
   end
 
@@ -720,25 +781,240 @@ function M.switch_to_normal_csv(session)
   vim.wo[win].cursorline = true
   vim.wo[win].scrolloff = 4
 
-  -- Jump to the current row in the normal raw CSV buffer (accounting for header + comment lines)
-  local row_obj = session.visible_rows and session.visible_rows[(session.cur_row or 1) - (session.top_row or 1) + 1]
-  local raw_line_num = (row_obj and row_obj.file_line) or ((session.cur_row or 1) + (session.header_line_num or 1))
-  local target_line = math.min(vim.api.nvim_buf_line_count(raw_buf), raw_line_num)
-  pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, target_line), 0 })
+  if not session.source_json_path and not session.source_json_buf then
+    -- Jump to the current row in the normal raw CSV buffer (accounting for header + comment lines)
+    local row_obj = session.visible_rows and session.visible_rows[(session.cur_row or 1) - (session.top_row or 1) + 1]
+    local raw_line_num = (row_obj and row_obj.file_line) or ((session.cur_row or 1) + (session.header_line_num or 1))
+    local target_line = math.min(vim.api.nvim_buf_line_count(raw_buf), raw_line_num)
+    pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, target_line), 0 })
+  end
 
   -- Bind <leader>cv in the raw buffer so pressing it again returns to SuperCsv!
   vim.keymap.set("n", "<leader>cv", function()
-    M.disabled_paths[filepath] = nil
-    M.open(filepath)
+    M.disabled_paths[session.filepath] = nil
+    if session.source_json_path then
+      M.disabled_paths[session.source_json_path] = nil
+      M.open_json(session.source_json_path)
+    elseif session.source_json_buf then
+      M.open_json( nil)
+    else
+      M.open(raw_target_path)
+    end
   end, { buffer = raw_buf, silent = true, desc = "SuperCsv: Open 2D Excel Viewport" })
 
-  vim.notify("[SuperCsv] Switched to normal raw CSV view (press <leader>cv or :SuperCsv toggle to re-enable)")
+  local kind = (session.source_json_path or session.source_json_buf) and "JSON" or "CSV"
+  vim.notify(string.format("[SuperCsv] Switched to normal raw %s view (press <leader>cv or :SuperCsv toggle to re-enable)", kind))
 end
 
---- Open a CSV file in the 2D Excel Virtual Viewport
-function M.open(filepath)
+--- Convert a JSON/JSONL file or current buffer to a CSV file on disk
+function M.json_to_csv(input_source, output_csv_path, opts)
+  opts = vim.tbl_extend("force", {}, opts or {})
+  vim.fn.mkdir(config.options.cache_dir, "p")
+
+  if not input_source or input_source == "" then
+    local s = M.get_active_session()
+    if s and s.source_json_path and vim.fn.filereadable(s.source_json_path) == 1 then
+      input_source = s.source_json_path
+    else
+      local buf_name = vim.api.nvim_buf_get_name(0)
+      if buf_name ~= "" and vim.fn.filereadable(buf_name) == 1 and json_engine.is_json_path(buf_name) and not vim.bo[0].modified then
+        input_source = buf_name
+      else
+        local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+        input_source = table.concat(lines, "\n")
+        opts.is_raw_text = true
+        if (not output_csv_path or output_csv_path == "") and buf_name ~= "" then
+          output_csv_path = buf_name:gsub("%.ndjson$", ""):gsub("%.jsonl$", ""):gsub("%.jsonc$", ""):gsub("%.json$", "") .. ".csv"
+        end
+      end
+    end
+  end
+
+  return json_engine.convert_json_to_csv(input_source, output_csv_path, opts)
+end
+
+--- Drill down into an active Subtable cell (`[tbl]` or `[arr]`) as a full interactive 2D SuperCsv Session
+function M.open_subtable(session)
+  session = session or M.get_active_session()
+  if not session then
+    return nil
+  end
+  local row_obj = session.visible_rows and session.visible_rows[(session.cur_row or 1) - (session.top_row or 1) + 1]
+  if not row_obj then
+    return nil
+  end
+  local raw_val = row_obj.cells[session.cur_col] or ""
+  local sub = json_engine.parse_subtable_cell(raw_val)
+  if not sub or not sub.rows or #sub.rows == 0 then
+    return nil
+  end
+
+  vim.fn.mkdir(config.options.cache_dir, "p")
+  local col_name = session.headers[session.cur_col] or ("col_" .. session.cur_col)
+  local hash = vim.fn.sha256("subtable_v2|" .. col_name .. "|" .. raw_val):sub(1, 16)
+  local safe_col = col_name:gsub("[^%w_%-]", "_")
+  local cache_csv = string.format("%s/subtable_%s_%s.csv", config.options.cache_dir, safe_col, hash)
+
+  local ok, out_or_err, info = json_engine.convert_json_to_csv(raw_val, cache_csv, { is_raw_text = true })
+  if not ok then
+    vim.notify("[SuperCsv Subtable Error] " .. tostring(out_or_err), vim.log.levels.ERROR)
+    return nil
+  end
+
+  M.disabled_paths[cache_csv] = nil
+  local child_session = M.open(cache_csv, { _skip_json_redirect = true })
+  if child_session then
+    child_session.parent_session = session
+    child_session.parent_row = session.cur_row
+    child_session.parent_col = session.cur_col
+    child_session.source_json_path = session.source_json_path
+    child_session.source_json_buf = session.source_json_buf
+    local parent_label = session.display_filename or vim.fn.fnamemodify(session.filepath, ":t")
+    parent_label = parent_label:gsub("%s*%[.*%]$", "")
+    child_session.display_filename = string.format(
+      "%s ❯ Row #%d.%s [Subtable %d×%d | <BS> Back]",
+      parent_label,
+      row_obj.rowid or session.cur_row,
+      col_name,
+      info.num_rows,
+      info.num_cols
+    )
+    viewport.render(child_session)
+  end
+  return child_session
+end
+
+--- Pop back from a Subtable session to its Parent Table session
+function M.close_subtable(session)
+  session = session or M.get_active_session()
+  if not session or not session.parent_session then
+    return false
+  end
+  local parent = session.parent_session
+  local win = (session.view_win and vim.api.nvim_win_is_valid(session.view_win))
+    and session.view_win
+    or vim.api.nvim_get_current_win()
+  if parent.view_buf and vim.api.nvim_buf_is_valid(parent.view_buf) then
+    vim.api.nvim_win_set_buf(win, parent.view_buf)
+    parent.view_win = win
+    viewport.render(parent)
+    return true
+  elseif parent.filepath and vim.fn.filereadable(parent.filepath) == 1 then
+    local reopened = M.open(parent.filepath, { _skip_json_redirect = true })
+    if reopened then
+      reopened.cur_row = session.parent_row or 1
+      reopened.cur_col = session.parent_col or 1
+      reopened.display_filename = parent.display_filename
+      reopened.source_json_path = parent.source_json_path
+      reopened.parent_session = parent.parent_session
+      viewport.render(reopened)
+      return true
+    end
+  end
+  return false
+end
+
+--- Visualize a JSON / JSONL file (or the current JSON buffer) as a 2D CSV Grid in SuperCsv
+function M.open_json(filepath, output_csv_path)
+  highlights.setup()
+  vim.fn.mkdir(config.options.cache_dir, "p")
+
+  local cur_buf = vim.api.nvim_get_current_buf()
+  local is_file = filepath and filepath ~= "" and vim.fn.filereadable(filepath) == 1
+  if not is_file then
+    local buf_name = vim.api.nvim_buf_get_name(cur_buf)
+    if (not filepath or filepath == "") and buf_name ~= "" and vim.fn.filereadable(buf_name) == 1 and not vim.bo[cur_buf].modified then
+      filepath = vim.fn.fnamemodify(buf_name, ":p")
+      is_file = true
+    end
+  else
+    filepath = vim.fn.fnamemodify(filepath, ":p")
+  end
+
+  if is_file then
+    local st = (vim.uv or vim.loop).fs_stat(filepath)
+    local mtime = st and st.mtime and st.mtime.sec or 0
+    local fsize = st and st.size or 0
+    local cache_csv = output_csv_path
+    local cchar_sig = vim.inspect(config.get_json_comment_char()) .. "|" .. vim.inspect(config.get_csv_comment_char())
+    if not cache_csv or cache_csv == "" then
+      local key = string.format("json2csv_v4|%s|%s|%d|%d", cchar_sig, filepath, fsize, mtime)
+      local hash = vim.fn.sha256(key):sub(1, 16)
+      local base = vim.fn.fnamemodify(filepath, ":t:r"):gsub("[^%w_%-]", "_")
+      cache_csv = string.format("%s/%s_%s.csv", config.options.cache_dir, base, hash)
+    else
+      cache_csv = vim.fn.fnamemodify(cache_csv, ":p")
+    end
+
+    local ok, out_or_err, info = json_engine.convert_json_to_csv(filepath, cache_csv)
+    if not ok then
+      vim.notify("[SuperCsv JSON Error] " .. tostring(out_or_err), vim.log.levels.ERROR)
+      return nil
+    end
+
+    M.disabled_paths[filepath] = nil
+    M.disabled_paths[cache_csv] = nil
+    local session = M.open(cache_csv, { _skip_json_redirect = true })
+    if session then
+      session.source_json_path = filepath
+      if info.comment_items then
+        session.comments = info.comment_items
+      end
+      session.display_filename = string.format("%s [JSON→CSV %d×%d]", vim.fn.fnamemodify(filepath, ":t"), info.num_rows, info.num_cols)
+      M.sessions_by_path[filepath] = session
+      viewport.render(session)
+    end
+    return session
+  else
+    -- Convert directly from in-memory buffer text
+    local lines = vim.api.nvim_buf_get_lines(cur_buf, 0, -1, false)
+    local raw_text = table.concat(lines, "\n")
+    local cchar_sig = vim.inspect(config.get_json_comment_char()) .. "|" .. vim.inspect(config.get_csv_comment_char())
+    local hash = vim.fn.sha256(cchar_sig .. "|" .. raw_text):sub(1, 16)
+    local cache_csv = (output_csv_path and output_csv_path ~= "")
+      and vim.fn.fnamemodify(output_csv_path, ":p")
+      or string.format("%s/buffer_json_%s.csv", config.options.cache_dir, hash)
+
+    local ok, out_or_err, info = json_engine.convert_json_to_csv(raw_text, cache_csv, { is_raw_text = true })
+    if not ok then
+      vim.notify("[SuperCsv JSON Error] " .. tostring(out_or_err), vim.log.levels.ERROR)
+      return nil
+    end
+
+    M.disabled_paths[cache_csv] = nil
+    local session = M.open(cache_csv, { _skip_json_redirect = true })
+    if session then
+      session.source_json_buf = cur_buf
+      if info.comment_items then
+        session.comments = info.comment_items
+      end
+      local buf_label = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(cur_buf), ":t")
+      if buf_label == "" then buf_label = "Buffer" end
+      session.display_filename = string.format("%s [JSON→CSV %d×%d]", buf_label, info.num_rows, info.num_cols)
+      viewport.render(session)
+    end
+    return session
+  end
+end
+
+--- Open a CSV (or JSON/JSONL) file in the 2D Excel Virtual Viewport
+function M.open(filepath, open_opts)
+  open_opts = open_opts or {}
   highlights.setup()
   filepath = filepath and filepath ~= "" and vim.fn.fnamemodify(filepath, ":p") or vim.api.nvim_buf_get_name(0)
+
+  if not open_opts._skip_json_redirect then
+    if json_engine.is_json_path(filepath) then
+      return M.open_json(filepath)
+    elseif filepath == "" or vim.fn.filereadable(filepath) == 0 then
+      local ft = vim.bo[0].filetype
+      local first_line = vim.trim((vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]) or "")
+      if ft == "json" or ft == "jsonc" or ft == "jsonl" or ft == "ndjson" or first_line:match("^[%[{]") then
+        return M.open_json(nil)
+      end
+    end
+  end
+
   if filepath == "" or vim.fn.filereadable(filepath) == 0 then
     vim.notify("[SuperCsv] File is not readable: " .. tostring(filepath), vim.log.levels.WARN)
     return nil
@@ -916,10 +1192,96 @@ function M.command(args)
   local sub = parts[1] or "open"
   local rest = table.concat(parts, " ", 2)
 
-  if sub == "open" then
+  if sub == "reload" then
+    local prev_session = M.get_active_session()
+    local saved_opts = vim.deepcopy(config.options or {})
+    for k in pairs(package.loaded) do
+      if k:match("^super%-csv") then
+        package.loaded[k] = nil
+      end
+    end
+    local fresh = require("super-csv")
+    fresh.setup(saved_opts)
+    pcall(vim.cmd, "runtime! plugin/super-csv.lua")
+    if prev_session then
+      if prev_session.source_json_path then
+        fresh.open_json(prev_session.source_json_path)
+      elseif prev_session.source_json_buf and vim.api.nvim_buf_is_valid(prev_session.source_json_buf) then
+        vim.api.nvim_set_current_buf(prev_session.source_json_buf)
+        fresh.open_json(nil)
+      elseif prev_session.filepath then
+        fresh.open(prev_session.filepath)
+      end
+    else
+      local bname = vim.api.nvim_buf_get_name(0)
+      local ft = vim.bo[0].filetype
+      local first_line = vim.trim((vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]) or "")
+      if json_engine.is_json_path(bname) or ft == "json" or ft == "jsonc" or ft == "jsonl" or ft == "ndjson" or first_line:match("^[%[{]") then
+        fresh.open_json(bname ~= "" and bname or nil)
+      elseif bname ~= "" and (bname:match("%.csv$") or bname:match("%.tsv$")) then
+        fresh.open(bname)
+      end
+    end
+    vim.notify("[SuperCsv] Reloaded plugin & opened buffer in 2D viewport")
+    return
+  elseif sub == "open" then
     config.options.enabled = true
     local target = (rest ~= "") and rest or vim.api.nvim_buf_get_name(0)
     M.open(target)
+    return
+  elseif sub == "json" or sub == "view_json" then
+    config.options.enabled = true
+    local target = (rest ~= "") and rest or nil
+    M.open_json(target)
+    return
+  elseif sub == "json_to_csv" or sub == "convert" then
+    config.options.enabled = true
+    local arg1 = parts[2]
+    local arg2 = parts[3]
+    local in_src, out_csv
+    if arg1 and arg2 then
+      in_src, out_csv = arg1, arg2
+    elseif arg1 and json_engine.is_json_path(arg1) and vim.fn.filereadable(arg1) == 1 then
+      in_src, out_csv = arg1, nil
+    else
+      in_src, out_csv = nil, arg1
+    end
+    local ok, res_path, info = M.json_to_csv(in_src, out_csv)
+    if ok then
+      vim.notify(string.format("[SuperCsv] Converted JSON (%d rows × %d cols) -> %s", info.num_rows, info.num_cols, res_path))
+      M.open(res_path)
+    else
+      vim.notify("[SuperCsv JSON→CSV Error] " .. tostring(res_path), vim.log.levels.ERROR)
+    end
+    return
+  elseif sub == "comment_char" then
+    if rest ~= "" then
+      config.options.comment_char = rest
+      config.options.comments = config.options.comments or {}
+      config.options.comments.csv = rest
+      vim.notify(string.format("[SuperCsv] CSV comment prefix set to %s", vim.inspect(rest)))
+      local s = M.get_active_session()
+      if s and s.filepath then
+        M.sessions_by_path[s.filepath] = nil
+        M.open(s.source_json_path or s.filepath)
+      end
+    else
+      vim.notify(string.format("[SuperCsv] CSV comment_char = %s | JSON json_comment_char = %s", vim.inspect(config.get_csv_comment_char()), vim.inspect(config.get_json_comment_char())))
+    end
+    return
+  elseif sub == "json_comment_char" then
+    if rest ~= "" then
+      config.options.json_comment_char = rest
+      config.options.comments = config.options.comments or {}
+      config.options.comments.json = rest
+      vim.notify(string.format("[SuperCsv] JSON comment prefix set to %s", vim.inspect(rest)))
+      local s = M.get_active_session()
+      if s and (s.source_json_path or s.source_json_buf) then
+        M.open_json(s.source_json_path)
+      end
+    else
+      vim.notify(string.format("[SuperCsv] JSON json_comment_char = %s | CSV comment_char = %s", vim.inspect(config.get_json_comment_char()), vim.inspect(config.get_csv_comment_char())))
+    end
     return
   elseif sub == "toggle" then
     local cur_buf = vim.api.nvim_get_current_buf()
@@ -1019,6 +1381,11 @@ function M.command(args)
     config.options.heatmap = not config.options.heatmap
     config.save_persisted()
     viewport.render(session)
+  elseif sub == "rainbow" or sub == "rainbow_cols" then
+    config.options.rainbow_columns = not config.options.rainbow_columns
+    config.save_persisted()
+    viewport.render(session)
+    vim.notify("[SuperCsv] Rainbow CSV Columns: " .. (config.options.rainbow_columns and "ON (saved)" or "OFF (saved)"))
   elseif sub == "zebra_rows" or sub == "zebra" then
     config.options.zebra_rows = not config.options.zebra_rows
     config.save_persisted()
@@ -1060,7 +1427,13 @@ function M.command(args)
     sqlite.save_to_csv(session, session.filepath, false)
     viewport.render(session)
   elseif sub == "export" and rest ~= "" then
-    local ok, err = sqlite.save_to_csv(session, vim.fn.fnamemodify(rest, ":p"), true)
+    local out_path = vim.fn.fnamemodify(rest, ":p")
+    local ok, err
+    if json_engine.is_json_path(out_path) then
+      ok, err = json_engine.export_session_to_json(session, out_path, true)
+    else
+      ok, err = sqlite.save_to_csv(session, out_path, true)
+    end
     if ok then
       vim.notify("[SuperCsv] Exported filtered view to " .. rest)
     else
@@ -1187,6 +1560,36 @@ function M.setup(opts)
       end,
     })
   end
+
+  -- Attach JSON-to-CSV visualization & conversion keymaps on .json / .jsonc / .jsonl / .ndjson buffers
+  vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter", "FileType" }, {
+    group = augroup,
+    pattern = { "*.json", "*.jsonc", "*.jsonl", "*.ndjson", "json", "jsonc", "jsonl", "ndjson" },
+    callback = function(ev)
+      if not vim.api.nvim_buf_is_valid(ev.buf) then return end
+      local bname = vim.api.nvim_buf_get_name(ev.buf)
+      if bname:match("^supercsv://") then return end
+
+      vim.keymap.set("n", "<leader>cv", function()
+        M.open_json(nil)
+      end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Visualize JSON as 2D CSV Grid" })
+
+      vim.keymap.set("n", "<leader>cj", function()
+        M.command("json_to_csv")
+      end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Convert JSON to .csv File & Open" })
+
+      if config.options.auto_open_json and config.options.enabled and bname ~= "" then
+        local path = vim.fn.fnamemodify(bname, ":p")
+        if not M.disabled_paths[path] then
+          vim.schedule(function()
+            if config.options.enabled and not M.disabled_paths[path] and vim.api.nvim_buf_is_valid(ev.buf) and vim.api.nvim_get_current_buf() == ev.buf then
+              M.open_json(path)
+            end
+          end)
+        end
+      end
+    end,
+  })
 end
 
 return M

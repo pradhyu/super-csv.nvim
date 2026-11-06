@@ -1,6 +1,7 @@
 local M = {}
 
 local parser = require("super-csv.engine.parser")
+local json_engine = require("super-csv.engine.json")
 local sqlite = require("super-csv.engine.sqlite")
 local config = require("super-csv.config")
 
@@ -188,7 +189,16 @@ function M.render(session)
       comment_section_lines = 1
     end
   end
-  local header_lines_count = 5 + comment_section_lines
+  local has_nested_headers = false
+  for c = 1, (session.num_cols or 0) do
+    local h = session.headers and session.headers[c] or ""
+    if h:find(".", 1, true) then
+      has_nested_headers = true
+      break
+    end
+  end
+
+  local header_lines_count = (has_nested_headers and 6 or 5) + comment_section_lines
   session.header_lines_count = header_lines_count
 
   local body_height = math.max(3, usable_height - header_lines_count - footer_lines)
@@ -295,7 +305,7 @@ function M.render(session)
 
   local banner = string.format(
     " 󰈛 %s │ %s │ %s │ %s%s │ [?]Help%s%s%s ",
-    vim.fn.fnamemodify(session.filepath, ":t"),
+    session.display_filename or vim.fn.fnamemodify(session.filepath, ":t"),
     engine_badge,
     row_summary,
     col_summary,
@@ -410,8 +420,113 @@ function M.render(session)
   table.insert(lines, top_border)
   add_hl(#lines - 1, 0, #top_border, "SuperCsvBorderPinned")
 
-  -- 2. Prominent Frozen Header Row 1 (Excel Letter + #Index + Lock/Sort/Filter icons)
-  --    & Header Row 2 (Column Name + [Type])
+  -- 2. Prominent Frozen Header Row 1 (Excel Letter + #Index + Lock/Sort/Filter icons),
+  --    Optional Nested Parent Table Row (spans across sibling attributes of nested JSON tables),
+  --    & Leaf Column Attribute Header Row
+  local use_rainbow = (config.options.rainbow_columns ~= false)
+  local function col_rainbow_idx(c)
+    return ((c - 1) % 10) + 1
+  end
+
+  local function split_nested_header(h)
+    h = tostring(h or "")
+    local parent, leaf = h:match("^(.+)%.([^%.]+)$")
+    if parent and leaf then
+      if tonumber(leaf) then
+        leaf = "#" .. leaf
+      end
+      return parent, leaf
+    end
+    return nil, h
+  end
+
+  local function build_nested_parent_header_line()
+    local l_idx = #lines
+    local segs = {}
+    local seg_hls = {}
+    local cur_byte = 0
+
+    local function push(txt, hl)
+      table.insert(segs, txt)
+      if hl then
+        table.insert(seg_hls, { cur_byte, cur_byte + #txt, hl })
+      end
+      cur_byte = cur_byte + #txt
+    end
+
+    push("┃", "SuperCsvBorderPinned")
+    push(fit_width("  TABLE", row_gutter_w, false), "SuperCsvHeaderPinned")
+
+    local idx = 1
+    local n_vis = #vis_cols
+    while idx <= n_vis do
+      local vc = vis_cols[idx]
+      local c = vc.col
+      local parent = split_nested_header(session.headers[c] or ("col_" .. c))
+      local is_pin_sep = (idx > 1 and vis_cols[idx - 1].pinned and not vc.pinned)
+      push(is_pin_sep and "║" or "┃", is_pin_sep and "SuperCsvBorderPinned" or "SuperCsvBorder")
+
+      if parent then
+        -- Find contiguous visible columns belonging to the same nested parent table and pin state
+        local end_idx = idx
+        local span_w = session.col_widths[c] or 14
+        local has_active = (c == session.cur_col)
+        local has_filter = (session.filters and session.filters[c] ~= nil)
+        while end_idx + 1 <= n_vis do
+          local next_vc = vis_cols[end_idx + 1]
+          local next_parent = split_nested_header(session.headers[next_vc.col] or "")
+          if next_parent == parent and next_vc.pinned == vc.pinned then
+            end_idx = end_idx + 1
+            span_w = span_w + (session.col_widths[next_vc.col] or 14) + 3
+            if next_vc.col == session.cur_col then has_active = true end
+            if session.filters and session.filters[next_vc.col] then has_filter = true end
+          else
+            break
+          end
+        end
+        local group_cnt = end_idx - idx + 1
+        local total_for_parent = 0
+        for sc = 1, (session.num_cols or 0) do
+          local sp = split_nested_header(session.headers[sc] or "")
+          if sp == parent then
+            total_for_parent = total_for_parent + 1
+          end
+        end
+        local h_hl = use_rainbow and ("SuperCsvRainbowHeader" .. col_rainbow_idx(c)) or "SuperCsvHeaderPinned"
+        if has_filter then h_hl = "SuperCsvHeaderFiltered" end
+        if has_active then h_hl = "SuperCsvHeaderActive" end
+
+        local group_label
+        if total_for_parent > group_cnt then
+          group_label = string.format("󰙅 %s (%d/%d cols)", parent, group_cnt, total_for_parent)
+        elseif total_for_parent > 1 then
+          group_label = string.format("󰙅 %s (%d cols)", parent, total_for_parent)
+        else
+          group_label = string.format("󰙅 %s", parent)
+        end
+        local cell_txt = " " .. fit_width(group_label, span_w, false) .. " "
+        push(cell_txt, h_hl)
+        idx = end_idx + 1
+      else
+        local w = session.col_widths[c] or 14
+        local h_hl = "SuperCsvHeaderType"
+        if c == session.cur_col then
+          h_hl = "SuperCsvHeaderActive"
+        end
+        local cell_txt = " " .. fit_width("─", w, false) .. " "
+        push(cell_txt, h_hl)
+        idx = idx + 1
+      end
+    end
+
+    push("┃", "SuperCsvBorderPinned")
+    local full = table.concat(segs)
+    table.insert(lines, full)
+    for _, h in ipairs(seg_hls) do
+      add_hl(l_idx, h[1], h[2], h[3])
+    end
+  end
+
   local function build_header_line(is_second_line)
     local l_idx = #lines
     local segs = {}
@@ -436,7 +551,12 @@ function M.render(session)
       local is_pin_sep = (idx > 1 and vis_cols[idx - 1].pinned and not vc.pinned)
       push(is_pin_sep and "║" or "┃", is_pin_sep and "SuperCsvBorderPinned" or "SuperCsvBorder")
 
-      local h_hl = vc.pinned and "SuperCsvHeaderPinned" or "SuperCsvHeaderNormal"
+      local h_hl
+      if use_rainbow then
+        h_hl = "SuperCsvRainbowHeader" .. col_rainbow_idx(c)
+      else
+        h_hl = vc.pinned and "SuperCsvHeaderPinned" or "SuperCsvHeaderNormal"
+      end
       if session.filters and session.filters[c] then
         h_hl = "SuperCsvHeaderFiltered"
       end
@@ -459,7 +579,9 @@ function M.render(session)
         local space = math.max(1, w - vim.fn.strdisplaywidth(left_part) - vim.fn.strdisplaywidth(t_badge))
         cell_txt = " " .. fit_width(left_part .. string.rep(" ", space) .. t_badge, w, false) .. " "
       else
-        cell_txt = " " .. fit_width(session.headers[c] or ("col_" .. c), w, false) .. " "
+        local raw_hdr = session.headers[c] or ("col_" .. c)
+        local _, leaf = split_nested_header(raw_hdr)
+        cell_txt = " " .. fit_width(has_nested_headers and leaf or raw_hdr, w, false) .. " "
       end
 
       push(cell_txt, h_hl)
@@ -474,6 +596,9 @@ function M.render(session)
   end
 
   build_header_line(false)
+  if has_nested_headers then
+    build_nested_parent_header_line()
+  end
   build_header_line(true)
 
   local mid_border = build_border("┣", "╋", "╬", "┫", "━")
@@ -494,9 +619,97 @@ function M.render(session)
     end
   end
 
-  -- 3. Data Grid Rows (Alternating Column Shading + Crosshair Active Row & Active Cell)
+  -- 3. Data Grid Rows (Alternating Column Shading + Crosshair Active Row & Active Cell + Inline Subtables)
   local active_cell_raw = ""
   local active_rowid = 0
+  local active_row_buf_line = nil
+
+  local function render_inline_subtable(st, col_name, parent_rowid)
+    local max_sub_rows = math.min(st.num_rows, 6)
+    local sub_cols = math.min(st.num_cols, 8)
+    local sub_widths = {}
+    for sc = 1, sub_cols do
+      local sh = st.headers[sc] or ("col_" .. sc)
+      local mw = math.max(#sh + 2, 10)
+      for sr = 1, max_sub_rows do
+        local sv = tostring((st.rows[sr] and st.rows[sr][sc]) or "")
+        if sv:sub(1, 1) == "[" then
+          sv = json_engine.format_subtable_preview(sv)
+        end
+        if #sv + 2 > mw then mw = #sv + 2 end
+      end
+      sub_widths[sc] = math.min(28, mw)
+    end
+
+    local inner_avail = math.max(30, grid_display_w - row_gutter_w - 3)
+    local title_txt = string.format(
+      " 󰙅 Subtable [%s] (Row #%d: %d row%s × %d col%s) │ [<CR>] Open Full Subtable  [gt] Hide Inline  [i] Edit JSON",
+      col_name,
+      parent_rowid,
+      st.num_rows,
+      st.num_rows == 1 and "" or "s",
+      st.num_cols,
+      st.num_cols == 1 and "" or "s"
+    )
+    local title_line = "│" .. fit_width("  ↳ SUB", row_gutter_w, false) .. "│" .. fit_width(title_txt, inner_avail, false) .. "│"
+    local t_idx = #lines
+    table.insert(lines, title_line)
+    local p1 = #"│"
+    local p2 = p1 + #fit_width("  ↳ SUB", row_gutter_w, false)
+    local p3 = p2 + #"│"
+    add_hl(t_idx, 0, p1, "SuperCsvBorderPinned")
+    add_hl(t_idx, p1, p2, "SuperCsvHeaderPinned")
+    add_hl(t_idx, p2, p3, "SuperCsvBorderPinned")
+    add_hl(t_idx, p3, #title_line - #"│", "SuperCsvHeaderBanner")
+    add_hl(t_idx, #title_line - #"│", #title_line, "SuperCsvBorderPinned")
+
+    -- Build subtable column header line
+    local hdr_parts = { "  #  " }
+    for sc = 1, sub_cols do
+      table.insert(hdr_parts, " " .. fit_width(st.headers[sc] or ("c" .. sc), sub_widths[sc], false) .. " ")
+    end
+    if st.num_cols > sub_cols then
+      table.insert(hdr_parts, string.format(" (+%d cols) ", st.num_cols - sub_cols))
+    end
+    local sub_hdr_body = "  ┏━" .. string.rep("━", math.min(inner_avail - 6, vim.fn.strdisplaywidth(table.concat(hdr_parts, "│")))) .. "┓"
+    local sh_line = "│" .. string.rep(" ", row_gutter_w) .. "│ " .. fit_width("│" .. table.concat(hdr_parts, "│") .. "│", inner_avail - 1, false) .. "│"
+    local sh_idx = #lines
+    table.insert(lines, sh_line)
+    add_hl(sh_idx, 0, #sh_line, "SuperCsvHeaderPinned")
+    local _ = sub_hdr_body
+
+    -- Render subtable rows
+    if st.num_rows == 0 then
+      local emp_sub = "│" .. string.rep(" ", row_gutter_w) .. "│ " .. fit_width("  (Empty array [])", inner_avail - 1, false) .. "│"
+      table.insert(lines, emp_sub)
+      add_hl(#lines - 1, 0, #emp_sub, "SuperCsvTypeNull")
+    else
+      for sr = 1, max_sub_rows do
+        local srow = st.rows[sr] or {}
+        local r_parts = { string.format(" %3d ", sr) }
+        for sc = 1, sub_cols do
+          local sv = tostring(srow[sc] or "")
+          if sv == "" then
+            sv = "∅"
+          elseif sv:sub(1, 1) == "[" then
+            sv = json_engine.format_subtable_preview(sv)
+          end
+          table.insert(r_parts, " " .. fit_width(sv, sub_widths[sc], false) .. " ")
+        end
+        local sr_body = "│" .. table.concat(r_parts, "│") .. "│"
+        local sr_line = "│" .. string.rep(" ", row_gutter_w) .. "│ " .. fit_width(sr_body, inner_avail - 1, false) .. "│"
+        local sr_idx = #lines
+        table.insert(lines, sr_line)
+        add_hl(sr_idx, 0, #sr_line, (sr % 2 == 0) and "SuperCsvColPinnedEven" or "SuperCsvColPinnedOdd")
+      end
+      if st.num_rows > max_sub_rows then
+        local more_sub = string.format("  … +%d more subtable rows (press <CR> on cell to open full %d-row subtable)", st.num_rows - max_sub_rows, st.num_rows)
+        local m_line = "│" .. string.rep(" ", row_gutter_w) .. "│ " .. fit_width(more_sub, inner_avail - 1, false) .. "│"
+        table.insert(lines, m_line)
+        add_hl(#lines - 1, 0, #m_line, "SuperCsvCommentBar")
+      end
+    end
+  end
 
   if #rows == 0 then
     local empty_line = "┃ " .. fit_width("No rows match the active filter / grep criteria. Press 'F' or '<leader>cF' to clear filters.", win_width - 4, false) .. " ┃"
@@ -507,9 +720,14 @@ function M.render(session)
       local abs_row = session.top_row + r_offset - 1
       local is_cur_row = (abs_row == session.cur_row)
       local l_idx = #lines
+      if is_cur_row then
+        active_row_buf_line = l_idx + 1
+      end
       local segs = {}
       local seg_hls = {}
       local cur_byte = 0
+      local row_subtable_to_render = nil
+      local row_subtable_col_name = nil
 
       local function push(txt, hl, fg_hl)
         table.insert(segs, txt)
@@ -540,10 +758,21 @@ function M.render(session)
         end
 
         local ctype = session.types[c]
+        local is_subtable_col = (ctype == "tbl" or ctype == "arr")
+          or (raw_val:sub(1, 1) == "[" and raw_val:sub(-1) == "]")
         local align_right = (ctype == "i64" or ctype == "f64")
         local disp_val = raw_val
         if raw_val == "" then
           disp_val = "∅"
+        elseif is_subtable_col then
+          disp_val = json_engine.format_subtable_preview(raw_val)
+          if is_cur_cell and session.inline_subtable ~= false then
+            row_subtable_to_render = json_engine.parse_subtable_cell(raw_val)
+            row_subtable_col_name = session.headers[c] or ("col_" .. c)
+          elseif is_cur_row and session.inline_subtable == true and not row_subtable_to_render then
+            row_subtable_to_render = json_engine.parse_subtable_cell(raw_val)
+            row_subtable_col_name = session.headers[c] or ("col_" .. c)
+          end
         end
         local cell_str = " " .. fit_width(disp_val, w, align_right) .. " "
 
@@ -602,6 +831,13 @@ function M.render(session)
         if not is_special_bg then
           if raw_val == "" then
             fg_hl = "SuperCsvTypeNull"
+          elseif use_rainbow then
+            local r_idx = col_rainbow_idx(c)
+            fg_hl = (vc.pinned or is_cur_row or is_subtable_col)
+              and ("SuperCsvRainbowBold" .. r_idx)
+              or ("SuperCsvRainbow" .. r_idx)
+          elseif is_subtable_col then
+            fg_hl = "SuperCsvSubtable"
           elseif not vc.pinned then
             local low = raw_val:lower()
             if low == "true" then
@@ -622,6 +858,10 @@ function M.render(session)
       table.insert(lines, full_row)
       for _, h in ipairs(seg_hls) do
         add_hl(l_idx, h[1], h[2], h[3], h[4])
+      end
+
+      if row_subtable_to_render then
+        render_inline_subtable(row_subtable_to_render, row_subtable_col_name, row_obj.rowid or abs_row)
       end
     end
   end
@@ -702,7 +942,8 @@ function M.render(session)
     vim.wo[win].scrolloff = 0
     vim.wo[win].sidescrolloff = 0
     local first_data_line = (session.header_lines_count or 5) + 1
-    local target_buf_line = math.max(first_data_line, math.min(#lines - footer_lines, first_data_line + (session.cur_row - session.top_row)))
+    local target_buf_line = active_row_buf_line
+      or math.max(first_data_line, math.min(#lines - footer_lines, first_data_line + (session.cur_row - session.top_row)))
     pcall(vim.api.nvim_win_call, win, function()
       vim.fn.winrestview({
         topline = 1,

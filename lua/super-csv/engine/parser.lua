@@ -14,17 +14,25 @@ function M.col_to_excel(idx)
   return s
 end
 
---- Check if a CSV line is a comment line (starts with `#` after optional whitespace)
+--- Check if a CSV line is a comment line (starts with configured `comment_char`, default `#`, after optional whitespace)
 function M.is_comment_line(line)
   if not line or line == "" then
     return false
   end
-  local cfg = require("super-csv.config").options
-  local cchar = (cfg and cfg.comment_char) or "#"
-  if cchar == "" then
+  local cfg = require("super-csv.config")
+  local cchar = cfg.get_csv_comment_char()
+  if type(cchar) == "table" then
+    for _, p in ipairs(cchar) do
+      if type(p) == "string" and p ~= "" and line:match("^%s*" .. vim.pesc(p)) ~= nil then
+        return true
+      end
+    end
     return false
   end
-  return line:match("^%s*" .. vim.pesc(cchar)) ~= nil
+  if not cchar or cchar == "" then
+    return false
+  end
+  return line:match("^%s*" .. vim.pesc(tostring(cchar))) ~= nil
 end
 
 --- Detect delimiter (',', '\t', '|', ';') from sample text (skipping leading `#` comment lines)
@@ -159,8 +167,13 @@ function M.infer_column_types(headers, rows)
     local int_count = 0
     local bool_count = 0
     local date_count = 0
+    local arr_count = 0
+    local tbl_count = 0
     local non_empty = 0
-    local max_len = math.max(#headers[c], config.min_col_width or 10)
+    local hdr_str = headers[c] or ""
+    local parent_part, leaf_part = hdr_str:match("^(.+)%.([^%.]+)$")
+    local effective_hdr_len = leaf_part and math.max(#leaf_part + 2, math.min(16, #parent_part + 3)) or #hdr_str
+    local max_len = math.max(effective_hdr_len, config.min_col_width or 10)
 
     for r = 1, math.min(#rows, 100) do
       local val = rows[r].cells and rows[r].cells[c] or rows[r][c] or ""
@@ -170,7 +183,12 @@ function M.infer_column_types(headers, rows)
       if val ~= "" and val ~= "NULL" and val ~= "null" then
         non_empty = non_empty + 1
         local lower = val:lower()
-        if lower == "true" or lower == "false" then
+        if val:sub(1, 1) == "[" and val:sub(-1) == "]" then
+          arr_count = arr_count + 1
+          if val:find("{", 1, true) then
+            tbl_count = tbl_count + 1
+          end
+        elseif lower == "true" or lower == "false" then
           bool_count = bool_count + 1
         elseif val:match("^%d%d%d%d%-%d%d%-%d%d") then
           date_count = date_count + 1
@@ -189,6 +207,9 @@ function M.infer_column_types(headers, rows)
 
     if non_empty == 0 then
       types[c] = "null"
+    elseif arr_count >= non_empty * 0.8 then
+      types[c] = (tbl_count > 0) and "tbl" or "arr"
+      max_len = math.min(max_len, 24)
     elseif bool_count == non_empty then
       types[c] = "bool"
     elseif date_count >= non_empty * 0.8 then

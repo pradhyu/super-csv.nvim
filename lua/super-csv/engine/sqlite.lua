@@ -148,8 +148,10 @@ end
 
 --- Build deterministic SQLite cache path for a CSV file
 function M.get_db_path(filepath, file_size, mtime)
-  local config = require("super-csv.config").options
-  local key = string.format("v2_comments|%s|%d|%d", filepath, file_size or 0, mtime or 0)
+  local cfg_mod = require("super-csv.config")
+  local config = cfg_mod.options
+  local cchar_sig = vim.inspect(cfg_mod.get_csv_comment_char())
+  local key = string.format("v3_comments|%s|%s|%d|%d", cchar_sig, filepath, file_size or 0, mtime or 0)
   local hash = vim.fn.sha256(key):sub(1, 20)
   local basename = vim.fn.fnamemodify(filepath, ":t:r"):gsub("[^%w_%-]", "_")
   return string.format("%s/%s_%s.sqlite", config.cache_dir, basename, hash)
@@ -253,7 +255,11 @@ CREATE VIEW csv AS SELECT %s FROM csv_data;
   )
 
   local has_comments = (session.comments and #session.comments > 0) or ((session.header_line_num or 1) > 1)
-  local cchar = vim.pesc((cfg and cfg.comment_char) or "#")
+  local raw_cchar = require("super-csv.config").get_csv_comment_char()
+  if type(raw_cchar) == "table" then
+    raw_cchar = raw_cchar[1] or "#"
+  end
+  local cchar = vim.pesc(tostring(raw_cchar or "#"))
   local import_target
   if has_comments then
     import_target = string.format('"| grep -v \'^[[:space:]]*%s\' %s"', cchar, vim.fn.shellescape(session.filepath))

@@ -1,0 +1,1117 @@
+{
+  "export_version": "2026.11",
+  "source": "stripe-analytics-pipeline",
+  "total_records": 30,
+  "data": [
+    {
+      "tenant_id": "TNT-0001",
+      "company": "NebulaAI-01",
+      "plan": "BUSINESS",
+      "region": "US-WEST",
+      "is_active": true,
+      "account": {
+        "owner": "Liam Chen",
+        "seats": 17,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 1650.00,
+        "arr_usd": 19800.00,
+        "uptime_pct": 99.53
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 8,
+          "ram_gb": 32
+        },
+        "network": {
+          "region": "us-west",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 3 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["us-west-1a", "us-west-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "business"],
+      "notes": "Q2 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0002",
+      "company": "QuantumFin-02",
+      "plan": "GROWTH",
+      "region": "EU-CENTRAL",
+      "is_active": true,
+      "account": {
+        "owner": "Maya Garcia",
+        "seats": 24,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 2100.00,
+        "arr_usd": 25200.00,
+        "uptime_pct": 99.56
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 12,
+          "ram_gb": 48
+        },
+        "network": {
+          "region": "eu-central",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 4 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["eu-central-1a", "eu-central-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "growth"],
+      "notes": "Q3 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0003",
+      "company": "VertexBio-03",
+      "plan": "STARTER",
+      "region": "APAC-TOKYO",
+      "is_active": true,
+      "account": {
+        "owner": "Noah Kim",
+        "seats": 31,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 2550.00,
+        "arr_usd": 30600.00,
+        "uptime_pct": 99.59
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 16,
+          "ram_gb": 64
+        },
+        "network": {
+          "region": "apac-tokyo",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 5 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["apac-tokyo-1a", "apac-tokyo-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "starter"],
+      "notes": "Q4 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0004",
+      "company": "HyperionCloud-04",
+      "plan": "ENTERPRISE",
+      "region": "US-EAST",
+      "is_active": true,
+      "account": {
+        "owner": "Elena Silva",
+        "seats": 38,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 3000.00,
+        "arr_usd": 36000.00,
+        "uptime_pct": 99.62
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 4,
+          "ram_gb": 16
+        },
+        "network": {
+          "region": "us-east",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 2 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["us-east-1a", "us-east-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "enterprise"],
+      "notes": "Q1 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0005",
+      "company": "OrbitLogistics-05",
+      "plan": "BUSINESS",
+      "region": "US-WEST",
+      "is_active": true,
+      "account": {
+        "owner": "Aria Patel",
+        "seats": 45,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 3450.00,
+        "arr_usd": 41400.00,
+        "uptime_pct": 99.65
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 8,
+          "ram_gb": 32
+        },
+        "network": {
+          "region": "us-west",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 3 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["us-west-1a", "us-west-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "business"],
+      "notes": null
+    },
+    {
+      "tenant_id": "TNT-0006",
+      "company": "PulseHealth-06",
+      "plan": "GROWTH",
+      "region": "EU-CENTRAL",
+      "is_active": false,
+      "account": {
+        "owner": "Liam Chen",
+        "seats": 52,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 3900.00,
+        "arr_usd": 46800.00,
+        "uptime_pct": 99.68
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 12,
+          "ram_gb": 48
+        },
+        "network": {
+          "region": "eu-central",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 4 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["eu-central-1a", "eu-central-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "growth"],
+      "notes": "Q3 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0007",
+      "company": "ApexRetail-07",
+      "plan": "STARTER",
+      "region": "APAC-TOKYO",
+      "is_active": true,
+      "account": {
+        "owner": "Maya Garcia",
+        "seats": 59,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 4350.00,
+        "arr_usd": 52200.00,
+        "uptime_pct": 99.71
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 16,
+          "ram_gb": 64
+        },
+        "network": {
+          "region": "apac-tokyo",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 5 },
+        { "service": "worker-pool", "status": "DEGRADED", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["apac-tokyo-1a", "apac-tokyo-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "starter"],
+      "notes": "Q4 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0008",
+      "company": "AcmeCorp-08",
+      "plan": "ENTERPRISE",
+      "region": "US-EAST",
+      "is_active": true,
+      "account": {
+        "owner": "Noah Kim",
+        "seats": 66,
+        "churn_risk": "HIGH"
+      },
+      "metrics": {
+        "mrr_usd": 4800.00,
+        "arr_usd": 57600.00,
+        "uptime_pct": 99.74
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 4,
+          "ram_gb": 16
+        },
+        "network": {
+          "region": "us-east",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 2 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["us-east-1a", "us-east-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "enterprise"],
+      "notes": "Q1 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0009",
+      "company": "NebulaAI-09",
+      "plan": "BUSINESS",
+      "region": "US-WEST",
+      "is_active": true,
+      "account": {
+        "owner": "Elena Silva",
+        "seats": 73,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 5250.00,
+        "arr_usd": 63000.00,
+        "uptime_pct": 99.77
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 8,
+          "ram_gb": 32
+        },
+        "network": {
+          "region": "us-west",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 3 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["us-west-1a", "us-west-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "business"],
+      "notes": "Q2 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0010",
+      "company": "QuantumFin-10",
+      "plan": "GROWTH",
+      "region": "EU-CENTRAL",
+      "is_active": true,
+      "account": {
+        "owner": "Aria Patel",
+        "seats": 80,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 5700.00,
+        "arr_usd": 68400.00,
+        "uptime_pct": 99.80
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 12,
+          "ram_gb": 48
+        },
+        "network": {
+          "region": "eu-central",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 4 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["eu-central-1a", "eu-central-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "growth"],
+      "notes": null
+    },
+    {
+      "tenant_id": "TNT-0011",
+      "company": "VertexBio-11",
+      "plan": "STARTER",
+      "region": "APAC-TOKYO",
+      "is_active": true,
+      "account": {
+        "owner": "Liam Chen",
+        "seats": 87,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 6150.00,
+        "arr_usd": 73800.00,
+        "uptime_pct": 99.83
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 16,
+          "ram_gb": 64
+        },
+        "network": {
+          "region": "apac-tokyo",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 5 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["apac-tokyo-1a", "apac-tokyo-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "starter"],
+      "notes": "Q4 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0012",
+      "company": "HyperionCloud-12",
+      "plan": "ENTERPRISE",
+      "region": "US-EAST",
+      "is_active": false,
+      "account": {
+        "owner": "Maya Garcia",
+        "seats": 94,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 6600.00,
+        "arr_usd": 79200.00,
+        "uptime_pct": 99.86
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 4,
+          "ram_gb": 16
+        },
+        "network": {
+          "region": "us-east",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 2 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["us-east-1a", "us-east-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "enterprise"],
+      "notes": "Q1 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0013",
+      "company": "OrbitLogistics-13",
+      "plan": "BUSINESS",
+      "region": "US-WEST",
+      "is_active": true,
+      "account": {
+        "owner": "Noah Kim",
+        "seats": 101,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 7050.00,
+        "arr_usd": 84600.00,
+        "uptime_pct": 99.89
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 8,
+          "ram_gb": 32
+        },
+        "network": {
+          "region": "us-west",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 3 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["us-west-1a", "us-west-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "business"],
+      "notes": "Q2 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0014",
+      "company": "PulseHealth-14",
+      "plan": "GROWTH",
+      "region": "EU-CENTRAL",
+      "is_active": true,
+      "account": {
+        "owner": "Elena Silva",
+        "seats": 108,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 7500.00,
+        "arr_usd": 90000.00,
+        "uptime_pct": 99.92
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 12,
+          "ram_gb": 48
+        },
+        "network": {
+          "region": "eu-central",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 4 },
+        { "service": "worker-pool", "status": "DEGRADED", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["eu-central-1a", "eu-central-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "growth"],
+      "notes": "Q3 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0015",
+      "company": "ApexRetail-15",
+      "plan": "STARTER",
+      "region": "APAC-TOKYO",
+      "is_active": true,
+      "account": {
+        "owner": "Aria Patel",
+        "seats": 115,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 7950.00,
+        "arr_usd": 95400.00,
+        "uptime_pct": 99.95
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 16,
+          "ram_gb": 64
+        },
+        "network": {
+          "region": "apac-tokyo",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 5 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["apac-tokyo-1a", "apac-tokyo-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "starter"],
+      "notes": null
+    },
+    {
+      "tenant_id": "TNT-0016",
+      "company": "AcmeCorp-16",
+      "plan": "ENTERPRISE",
+      "region": "US-EAST",
+      "is_active": true,
+      "account": {
+        "owner": "Liam Chen",
+        "seats": 122,
+        "churn_risk": "HIGH"
+      },
+      "metrics": {
+        "mrr_usd": 8400.00,
+        "arr_usd": 100800.00,
+        "uptime_pct": 99.98
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 4,
+          "ram_gb": 16
+        },
+        "network": {
+          "region": "us-east",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 2 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["us-east-1a", "us-east-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "enterprise"],
+      "notes": "Q1 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0017",
+      "company": "NebulaAI-17",
+      "plan": "BUSINESS",
+      "region": "US-WEST",
+      "is_active": true,
+      "account": {
+        "owner": "Maya Garcia",
+        "seats": 129,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 8850.00,
+        "arr_usd": 106200.00,
+        "uptime_pct": 99.51
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 8,
+          "ram_gb": 32
+        },
+        "network": {
+          "region": "us-west",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 3 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["us-west-1a", "us-west-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "business"],
+      "notes": "Q2 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0018",
+      "company": "QuantumFin-18",
+      "plan": "GROWTH",
+      "region": "EU-CENTRAL",
+      "is_active": false,
+      "account": {
+        "owner": "Noah Kim",
+        "seats": 136,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 9300.00,
+        "arr_usd": 111600.00,
+        "uptime_pct": 99.54
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 12,
+          "ram_gb": 48
+        },
+        "network": {
+          "region": "eu-central",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 4 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["eu-central-1a", "eu-central-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "growth"],
+      "notes": "Q3 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0019",
+      "company": "VertexBio-19",
+      "plan": "STARTER",
+      "region": "APAC-TOKYO",
+      "is_active": true,
+      "account": {
+        "owner": "Elena Silva",
+        "seats": 143,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 9750.00,
+        "arr_usd": 117000.00,
+        "uptime_pct": 99.57
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 16,
+          "ram_gb": 64
+        },
+        "network": {
+          "region": "apac-tokyo",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 5 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["apac-tokyo-1a", "apac-tokyo-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "starter"],
+      "notes": "Q4 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0020",
+      "company": "HyperionCloud-20",
+      "plan": "ENTERPRISE",
+      "region": "US-EAST",
+      "is_active": true,
+      "account": {
+        "owner": "Aria Patel",
+        "seats": 150,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 10200.00,
+        "arr_usd": 122400.00,
+        "uptime_pct": 99.60
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 4,
+          "ram_gb": 16
+        },
+        "network": {
+          "region": "us-east",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 2 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["us-east-1a", "us-east-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "enterprise"],
+      "notes": null
+    },
+    {
+      "tenant_id": "TNT-0021",
+      "company": "OrbitLogistics-21",
+      "plan": "BUSINESS",
+      "region": "US-WEST",
+      "is_active": true,
+      "account": {
+        "owner": "Liam Chen",
+        "seats": 157,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 10650.00,
+        "arr_usd": 127800.00,
+        "uptime_pct": 99.63
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 8,
+          "ram_gb": 32
+        },
+        "network": {
+          "region": "us-west",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 3 },
+        { "service": "worker-pool", "status": "DEGRADED", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["us-west-1a", "us-west-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "business"],
+      "notes": "Q2 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0022",
+      "company": "PulseHealth-22",
+      "plan": "GROWTH",
+      "region": "EU-CENTRAL",
+      "is_active": true,
+      "account": {
+        "owner": "Maya Garcia",
+        "seats": 164,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 11100.00,
+        "arr_usd": 133200.00,
+        "uptime_pct": 99.66
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 12,
+          "ram_gb": 48
+        },
+        "network": {
+          "region": "eu-central",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 4 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["eu-central-1a", "eu-central-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "growth"],
+      "notes": "Q3 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0023",
+      "company": "ApexRetail-23",
+      "plan": "STARTER",
+      "region": "APAC-TOKYO",
+      "is_active": true,
+      "account": {
+        "owner": "Noah Kim",
+        "seats": 171,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 11550.00,
+        "arr_usd": 138600.00,
+        "uptime_pct": 99.69
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 16,
+          "ram_gb": 64
+        },
+        "network": {
+          "region": "apac-tokyo",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 5 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["apac-tokyo-1a", "apac-tokyo-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "starter"],
+      "notes": "Q4 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0024",
+      "company": "AcmeCorp-24",
+      "plan": "ENTERPRISE",
+      "region": "US-EAST",
+      "is_active": false,
+      "account": {
+        "owner": "Elena Silva",
+        "seats": 178,
+        "churn_risk": "HIGH"
+      },
+      "metrics": {
+        "mrr_usd": 12000.00,
+        "arr_usd": 144000.00,
+        "uptime_pct": 99.72
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 4,
+          "ram_gb": 16
+        },
+        "network": {
+          "region": "us-east",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 2 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["us-east-1a", "us-east-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "enterprise"],
+      "notes": "Q1 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0025",
+      "company": "NebulaAI-25",
+      "plan": "BUSINESS",
+      "region": "US-WEST",
+      "is_active": true,
+      "account": {
+        "owner": "Aria Patel",
+        "seats": 185,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 12450.00,
+        "arr_usd": 149400.00,
+        "uptime_pct": 99.75
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 8,
+          "ram_gb": 32
+        },
+        "network": {
+          "region": "us-west",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 3 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["us-west-1a", "us-west-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "business"],
+      "notes": null
+    },
+    {
+      "tenant_id": "TNT-0026",
+      "company": "QuantumFin-26",
+      "plan": "GROWTH",
+      "region": "EU-CENTRAL",
+      "is_active": true,
+      "account": {
+        "owner": "Liam Chen",
+        "seats": 192,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 12900.00,
+        "arr_usd": 154800.00,
+        "uptime_pct": 99.78
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 12,
+          "ram_gb": 48
+        },
+        "network": {
+          "region": "eu-central",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 4 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["eu-central-1a", "eu-central-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "growth"],
+      "notes": "Q3 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0027",
+      "company": "VertexBio-27",
+      "plan": "STARTER",
+      "region": "APAC-TOKYO",
+      "is_active": true,
+      "account": {
+        "owner": "Maya Garcia",
+        "seats": 199,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 13350.00,
+        "arr_usd": 160200.00,
+        "uptime_pct": 99.81
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 16,
+          "ram_gb": 64
+        },
+        "network": {
+          "region": "apac-tokyo",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 5 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["apac-tokyo-1a", "apac-tokyo-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "starter"],
+      "notes": "Q4 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0028",
+      "company": "HyperionCloud-28",
+      "plan": "ENTERPRISE",
+      "region": "US-EAST",
+      "is_active": true,
+      "account": {
+        "owner": "Noah Kim",
+        "seats": 206,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 13800.00,
+        "arr_usd": 165600.00,
+        "uptime_pct": 99.84
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 4,
+          "ram_gb": 16
+        },
+        "network": {
+          "region": "us-east",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 2 },
+        { "service": "worker-pool", "status": "DEGRADED", "replicas": 2 }
+      ],
+      "environments": {
+        "prod": ["us-east-1a", "us-east-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "enterprise"],
+      "notes": "Q1 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0029",
+      "company": "OrbitLogistics-29",
+      "plan": "BUSINESS",
+      "region": "US-WEST",
+      "is_active": true,
+      "account": {
+        "owner": "Elena Silva",
+        "seats": 213,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 14250.00,
+        "arr_usd": 171000.00,
+        "uptime_pct": 99.87
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 8,
+          "ram_gb": 32
+        },
+        "network": {
+          "region": "us-west",
+          "cdn_enabled": false
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 3 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 3 }
+      ],
+      "environments": {
+        "prod": ["us-west-1a", "us-west-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "business"],
+      "notes": "Q2 renewal scheduled"
+    },
+    {
+      "tenant_id": "TNT-0030",
+      "company": "PulseHealth-30",
+      "plan": "GROWTH",
+      "region": "EU-CENTRAL",
+      "is_active": false,
+      "account": {
+        "owner": "Aria Patel",
+        "seats": 220,
+        "churn_risk": "LOW"
+      },
+      "metrics": {
+        "mrr_usd": 14700.00,
+        "arr_usd": 176400.00,
+        "uptime_pct": 99.90
+      },
+      "infrastructure": {
+        "compute": {
+          "vcpu": 12,
+          "ram_gb": 48
+        },
+        "network": {
+          "region": "eu-central",
+          "cdn_enabled": true
+        }
+      },
+      "deployments": [
+        { "service": "api-gateway", "status": "HEALTHY", "replicas": 4 },
+        { "service": "worker-pool", "status": "HEALTHY", "replicas": 1 }
+      ],
+      "environments": {
+        "prod": ["eu-central-1a", "eu-central-1b"],
+        "staging": ["us-west-stage"]
+      },
+      "tags": ["saas", "growth"],
+      "notes": null
+    }
+  ]
+}

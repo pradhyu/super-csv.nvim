@@ -173,19 +173,55 @@ function M.setup()
   local err_fg = pick_fg("DiagnosticError", "ErrorMsg", "Removed") or (is_light and "#b91c1c" or "#f7768e")
   local info_fg = pick_fg("DiagnosticInfo", "DiagnosticHint", "Special", "Title") or title_fg
   local num_fg = pick_fg("Number", "Constant", "Float") or warn_fg
+  local func_fg = pick_fg("Function", "@function", "Directory", "Title") or (is_light and "#2563eb" or "#7aa2f7")
+  local str_fg = pick_fg("String", "@string", "DiagnosticOk") or ok_fg
+  local kw_fg = pick_fg("Keyword", "@keyword", "Statement", "Conditional") or (is_light and "#7c3aed" or "#bb9af7")
+  local type_fg = pick_fg("Type", "@type", "Special", "StorageClass") or (is_light and "#0891b2" or "#2ac3de")
+  local const_fg = pick_fg("Constant", "@constant", "Number", "Boolean") or (is_light and "#ea580c" or "#ff9e64")
+  local op_fg = pick_fg("Operator", "@operator", "DiagnosticHint", "PreProc") or (is_light and "#0284c7" or "#89ddff")
+  local ident_fg = pick_fg("@variable.member", "@property", "Identifier", "Special") or (is_light and "#4f46e5" or "#7dcfff")
 
-  -- Harmonious row & column zebra surfaces stepped smoothly between Normal and CursorLine
+  -- Build a 10-color Rainbow CSV palette adapted to the active Neovim colorscheme
+  local raw_rainbow = {
+    func_fg,                                           -- 1: Blue (Function)
+    str_fg,                                            -- 2: Green (String)
+    const_fg,                                          -- 3: Orange / Peach (Constant / Number)
+    type_fg,                                           -- 4: Cyan / Teal (Type / Special)
+    kw_fg,                                             -- 5: Purple / Magenta (Keyword)
+    warn_fg,                                           -- 6: Yellow / Gold (DiagnosticWarn)
+    err_fg,                                            -- 7: Coral / Rose (DiagnosticError)
+    op_fg,                                             -- 8: Sky / Aqua (Operator / Hint)
+    blend(kw_fg, err_fg, 0.50),                        -- 9: Orchid / Pink
+    blend(str_fg, type_fg, 0.50) or ident_fg,          -- 10: Mint / Seafoam
+  }
+  local fallback_dark = { "#7aa2f7", "#9ece6a", "#ff9e64", "#2ac3de", "#bb9af7", "#e0af68", "#f7768e", "#7dcfff", "#f5c2e7", "#73daca" }
+  local fallback_light = { "#2563eb", "#16a34a", "#ea580c", "#0891b2", "#7c3aed", "#ca8a04", "#dc2626", "#0284c7", "#db2777", "#0d9488" }
+  local fallbacks = is_light and fallback_light or fallback_dark
+
+  M.num_rainbow = 10
+  local rainbow_fgs = {}
+  for i = 1, M.num_rainbow do
+    local cand = raw_rainbow[i] or fallbacks[i]
+    -- Ensure distinctness from immediately preceding rainbow color
+    if i > 1 and color_distance(cand, rainbow_fgs[i - 1]) < 32 then
+      cand = fallbacks[i]
+    end
+    rainbow_fgs[i] = cand
+  end
+
+  -- Clean, calm row & header surfaces (no clashy multi-colored background boxes)
+  local header_bg = blend(cursorline_bg, base_bg, 0.55)
   local row_odd_col_odd_bg = normal.bg -- nil when terminal background is transparent
-  local row_odd_col_even_bg = blend(cursorline_bg, base_bg, 0.32)
-  local row_even_col_odd_bg = blend(cursorline_bg, base_bg, 0.62)
-  local row_even_col_even_bg = blend(cursorline_bg, base_bg, 0.85)
+  local row_odd_col_even_bg = blend(cursorline_bg, base_bg, 0.25)
+  local row_even_col_odd_bg = blend(cursorline_bg, base_bg, 0.42)
+  local row_even_col_even_bg = blend(cursorline_bg, base_bg, 0.58)
 
-  local pinned_odd_bg = blend(special_fg, surface_bg, is_light and 0.08 or 0.07)
-  local pinned_even_bg = blend(special_fg, row_even_col_odd_bg, is_light and 0.10 or 0.09)
-  local pinned_fg = blend(special_fg, normal_fg, 0.30)
+  local pinned_odd_bg = row_odd_col_odd_bg
+  local pinned_even_bg = row_even_col_odd_bg
+  local pinned_fg = rainbow_fgs[1]
 
-  local cursor_row_bg = blend(title_fg, cursorline_bg, is_light and 0.12 or 0.14)
-  local cursor_cell_bg = blend(active_fg, visual_bg, is_light and 0.28 or 0.26)
+  local cursor_row_bg = blend(title_fg, cursorline_bg, is_light and 0.10 or 0.12)
+  local cursor_cell_bg = blend(active_fg, visual_bg, is_light and 0.26 or 0.24)
   local cursor_cell_fg = normal_fg
   if math.abs((luminance(cursor_cell_bg) or 0) - (luminance(normal_fg) or 255)) < 65 then
     cursor_cell_fg = base_bg
@@ -199,12 +235,12 @@ function M.setup()
   end
 
   local groups = {
-    SuperCsvHeaderBanner   = { bg = blend(title_fg, surface_bg, 0.08), fg = title_fg, bold = true },
-    SuperCsvHeaderPinned   = { bg = blend(special_fg, cursorline_bg, 0.16), fg = special_fg, bold = true },
-    SuperCsvHeaderNormal   = { bg = blend(title_fg, cursorline_bg, 0.12), fg = normal_fg, bold = true },
-    SuperCsvHeaderActive   = { bg = blend(active_fg, cursorline_bg, 0.24), fg = active_fg, bold = true },
-    SuperCsvHeaderFiltered = { bg = blend(ok_fg, cursorline_bg, 0.20), fg = ok_fg, bold = true },
-    SuperCsvHeaderType     = { bg = surface_bg, fg = linenr_fg },
+    SuperCsvHeaderBanner   = { bg = surface_bg, fg = title_fg, bold = true },
+    SuperCsvHeaderPinned   = { bg = header_bg, fg = special_fg, bold = true },
+    SuperCsvHeaderNormal   = { bg = header_bg, fg = normal_fg, bold = true },
+    SuperCsvHeaderActive   = { bg = blend(active_fg, cursorline_bg, 0.22), fg = active_fg, bold = true },
+    SuperCsvHeaderFiltered = { bg = blend(ok_fg, cursorline_bg, 0.18), fg = ok_fg, bold = true },
+    SuperCsvHeaderType     = { bg = header_bg, fg = linenr_fg },
 
     SuperCsvColOdd         = { bg = row_odd_col_odd_bg, fg = normal_fg },
     SuperCsvColEven        = { bg = row_odd_col_even_bg, fg = normal_fg },
@@ -223,25 +259,33 @@ function M.setup()
     SuperCsvCellModified   = { bg = blend(warn_fg, base_bg, 0.20), fg = warn_fg, bold = true },
     SuperCsvCellMatch      = { bg = match_bg, fg = match_fg, bold = true },
 
-    SuperCsvBorder         = { fg = blend(muted_fg, base_bg, 0.60) },
-    SuperCsvBorderPinned   = { fg = blend(float_border_fg, muted_fg, 0.55), bold = true },
+    SuperCsvBorder         = { fg = blend(muted_fg, base_bg, 0.55) },
+    SuperCsvBorderPinned   = { fg = blend(float_border_fg, muted_fg, 0.50), bold = true },
 
     SuperCsvFooterSummary  = { bg = surface_bg, fg = info_fg, bold = true },
-    SuperCsvFooterCell     = { bg = blend(cursorline_bg, surface_bg, 0.45), fg = blend(normal_fg, muted_fg, 0.35) },
+    SuperCsvFooterCell     = { bg = header_bg, fg = blend(normal_fg, muted_fg, 0.30) },
 
-    SuperCsvTypeNumber     = { fg = blend(num_fg, normal_fg, 0.65) },
+    SuperCsvTypeNumber     = { fg = num_fg },
     SuperCsvTypeBoolTrue   = { fg = ok_fg, bold = true },
     SuperCsvTypeBoolFalse  = { fg = err_fg, bold = true },
     SuperCsvTypeNull       = { fg = muted_fg, italic = true },
+    SuperCsvSubtable       = { fg = type_fg, bold = true },
 
     SuperCsvHeatLow        = { bg = blend(ok_fg, base_bg, 0.16), fg = ok_fg },
     SuperCsvHeatMid        = { bg = blend(warn_fg, base_bg, 0.18), fg = warn_fg },
     SuperCsvHeatHigh       = { bg = blend(err_fg, base_bg, 0.22), fg = err_fg, bold = true },
 
-    SuperCsvCommentBar     = { bg = blend(warn_fg, surface_bg, 0.12), fg = warn_fg, bold = true },
+    SuperCsvCommentBar     = { bg = surface_bg, fg = warn_fg, bold = true },
     SuperCsvComment        = { bg = surface_bg, fg = muted_fg, italic = true },
-    SuperCsvCommentLineNr  = { bg = blend(info_fg, surface_bg, 0.10), fg = info_fg, bold = true },
+    SuperCsvCommentLineNr  = { bg = surface_bg, fg = info_fg, bold = true },
   }
+
+  for i = 1, M.num_rainbow do
+    local rfg = rainbow_fgs[i]
+    groups["SuperCsvRainbow" .. i] = { fg = rfg }
+    groups["SuperCsvRainbowBold" .. i] = { fg = rfg, bold = true }
+    groups["SuperCsvRainbowHeader" .. i] = { bg = header_bg, fg = rfg, bold = true }
+  end
 
   for name, spec in pairs(groups) do
     vim.api.nvim_set_hl(0, name, spec)

@@ -6,6 +6,9 @@ vim.g.loaded_super_csv = true
 local subcommands = {
   "open",
   "toggle",
+  "json",
+  "json_to_csv",
+  "convert",
   "disable",
   "enable",
   "zebra_rows",
@@ -24,6 +27,10 @@ local subcommands = {
   "sort",
   "freeze",
   "heatmap",
+  "comments",
+  "comment_char",
+  "json_comment_char",
+  "help",
   "save",
   "export",
 }
