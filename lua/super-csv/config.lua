@@ -12,7 +12,7 @@ M.defaults = {
   rainbow_columns = true,    -- Rainbow CSV per-column foreground colors from active Neovim theme (toggle with gr)
   zebra_columns = false,     -- Alternating background colors for even/odd columns
   zebra_rows = true,         -- Subtle alternating background colors for even/odd rows (Excel banded rows)
-  border_style = "heavy",    -- Viewport grid border style: "heavy" (default), "ascii", "single", "rounded"
+  border_style = "ascii",    -- Viewport grid border style: "ascii" (default), "heavy", "single", "rounded"
   show_footer_stats = true,  -- Show Excel-style COUNT / SUM / AVG / MIN / MAX bar at bottom
   heatmap = false,           -- Conditional numeric heatmap coloring (toggle with gm)
   comment_char = "#",        -- Default comment prefix for CSV/TSV files (e.g. "#", "//", ";")
@@ -51,7 +51,7 @@ function M.get_json_comment_char()
 end
 
 function M.get_border_style()
-  return M.options.border_style or "heavy"
+  return M.options.border_style or "ascii"
 end
 
 function M.load_persisted()

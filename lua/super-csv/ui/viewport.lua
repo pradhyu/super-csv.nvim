@@ -365,8 +365,8 @@ function M.render(session)
   table.insert(lines, banner)
   add_hl(0, 0, #banner, "SuperCsvHeaderBanner")
 
-  local border_style = (session.border_style or config.options.border_style or "heavy"):lower()
-  local bs = BORDER_SETS[border_style] or BORDER_SETS.heavy
+  local border_style = (session.border_style or config.options.border_style or "ascii"):lower()
+  local bs = BORDER_SETS[border_style] or BORDER_SETS.ascii
 
   -- Helper to build horizontal border lines
   local row_gutter_w = 7

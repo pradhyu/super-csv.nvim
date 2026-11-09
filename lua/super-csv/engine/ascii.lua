@@ -261,11 +261,13 @@ function M.generate_table(headers, rows, opts)
     for c = 1, total_cols do
       local w = col_widths[c]
       if col_numeric[c] then
-        -- right aligned
-        table.insert(sep_parts, " " .. string.rep("-", math.max(1, w - 1)) .. ": |")
+        -- right aligned: " ---: |"
+        local dashes = math.max(1, w - 1)
+        table.insert(sep_parts, " " .. string.rep("-", dashes) .. ": |")
       else
-        -- left aligned
-        table.insert(sep_parts, ":" .. string.rep("-", math.max(1, w)) .. " |")
+        -- left aligned: " :--- |"
+        local dashes = math.max(1, w - 1)
+        table.insert(sep_parts, " :" .. string.rep("-", dashes) .. " |")
       end
     end
     table.insert(lines, table.concat(sep_parts))
@@ -290,6 +292,18 @@ function M.generate_table(headers, rows, opts)
   -- 5. Bottom border
   if style.bot then
     table.insert(lines, build_border_line(style.bot, col_widths, style.outer_vsep))
+  end
+
+  -- Optional Markdown fenced code block wrapper
+  if opts.fence then
+    local fence_lang = ""
+    if type(opts.fence) == "string" and opts.fence ~= "" then
+      fence_lang = opts.fence
+    elseif style.is_markdown then
+      fence_lang = "markdown"
+    end
+    table.insert(lines, 1, "```" .. fence_lang)
+    table.insert(lines, "```")
   end
 
   if opts.as_lines then
@@ -546,6 +560,28 @@ function M.to_ascii(source, opts)
   end
 
   return nil, "No valid source (session, file, or data) provided"
+end
+
+--- Save generated ASCII/Markdown/Unicode table directly to a file
+--- @param source any Session, buffer number, file path, string, or table
+--- @param filepath string Output destination path
+--- @param opts table|nil Formatting options
+function M.save_to_file(source, filepath, opts)
+  opts = opts or {}
+  if not filepath or vim.trim(filepath) == "" then
+    return false, "Missing destination file path"
+  end
+  local text, err = M.to_ascii(source, opts)
+  if not text then
+    return false, err or "Failed to generate table"
+  end
+  local lines = vim.split(text, "\n")
+  local full_path = vim.fn.fnamemodify(filepath, ":p")
+  local ok, write_err = pcall(vim.fn.writefile, lines, full_path)
+  if not ok then
+    return false, "Failed to write file: " .. tostring(write_err)
+  end
+  return true, full_path, #lines
 end
 
 return M

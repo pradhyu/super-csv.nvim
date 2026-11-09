@@ -718,6 +718,14 @@ local function attach_keymaps(session)
     M.view_ascii({ style = "ascii" })
   end, "Preview Formatted ASCII Table")
 
+  map("<leader>cmd", function()
+    M.view_markdown()
+  end, "Preview Formatted Markdown Table")
+
+  map("<leader>cM", function()
+    M.view_markdown()
+  end, "Preview Formatted Markdown Table")
+
   map("u", function()
     local ok, msg = sqlite.undo(session)
     viewport.render(session)
@@ -1357,10 +1365,33 @@ function M.command(args)
     local limit = tonumber(parts[3])
     M.view_ascii({ style = style, max_rows = limit })
     return
+  elseif sub == "markdown" or sub == "md" or sub == "view_markdown" then
+    local limit = tonumber(parts[2])
+    M.view_markdown({ max_rows = limit })
+    return
+  elseif sub == "preview" then
+    local style = parts[2] or "ascii"
+    local limit = tonumber(parts[3])
+    M.view_ascii({ style = style, max_rows = limit })
+    return
   elseif sub == "copy_ascii" or sub == "yank_ascii" then
     local style = parts[2] or "ascii"
     local limit = tonumber(parts[3])
     M.copy_ascii({ style = style, max_rows = limit })
+    return
+  elseif sub == "copy_markdown" or sub == "yank_markdown" then
+    local limit = tonumber(parts[2])
+    M.copy_markdown({ max_rows = limit })
+    return
+  elseif sub == "save_ascii" or sub == "save_markdown" then
+    local path = parts[2]
+    local style = (sub == "save_markdown") and "markdown" or (parts[3] or "ascii")
+    local limit = tonumber(parts[4])
+    if not path or path == "" then
+      local ext = (style == "markdown") and ".md" or ".txt"
+      path = "table" .. ext
+    end
+    M.save_ascii(path, { style = style, max_rows = limit })
     return
   end
 
@@ -1519,39 +1550,104 @@ function M.copy_ascii(opts)
   return true, text
 end
 
---- Open formatted ASCII/Markdown/Unicode table in a floating preview or scratch buffer
+--- Save ASCII/Markdown/Unicode table directly to a file
+--- @param filepath string Destination path
 --- @param opts table|nil Formatting options
-function M.view_ascii(opts)
+function M.save_ascii(filepath, opts)
   opts = opts or {}
   local s = M.get_active_session()
   local target = s or vim.api.nvim_get_current_buf()
-  local text, err = ascii_engine.to_ascii(target, opts)
-  if not text then
-    vim.notify("[SuperCsv ASCII Error] " .. tostring(err), vim.log.levels.ERROR)
-    return nil, err
+  local ok, res, count = ascii_engine.save_to_file(target, filepath, opts)
+  if not ok then
+    vim.notify("[SuperCsv Save Error] " .. tostring(res), vim.log.levels.ERROR)
+    return false, res
+  end
+  local style_name = opts.style or "ascii"
+  vim.notify(string.format("[SuperCsv] Saved %s table to %s (%d lines)", style_name, res, count or 0), vim.log.levels.INFO)
+  return true, res
+end
+
+--- Save Markdown table directly to a file
+--- @param filepath string Destination path
+--- @param opts table|nil Formatting options
+function M.save_markdown(filepath, opts)
+  return M.save_ascii(filepath, vim.tbl_extend("force", opts or {}, { style = "markdown" }))
+end
+
+--- Copy Markdown table to system clipboard
+--- @param opts table|nil Formatting options
+function M.copy_markdown(opts)
+  return M.copy_ascii(vim.tbl_extend("force", opts or {}, { style = "markdown" }))
+end
+
+--- Open formatted ASCII/Markdown/Unicode table in a floating interactive preview
+--- Supports live switching between Markdown, ASCII, and Unicode styles, code fencing, and saving to file
+--- @param opts table|nil Formatting options
+function M.view_ascii(opts)
+  opts = opts or {}
+  local cur_style = opts.style or "ascii"
+  local is_fenced = opts.fence == true
+  local s = M.get_active_session()
+  local target = s or vim.api.nvim_get_current_buf()
+
+  local function render_content()
+    local gen_opts = vim.tbl_extend("force", opts, { style = cur_style, fence = is_fenced })
+    local text, err = ascii_engine.to_ascii(target, gen_opts)
+    if not text then
+      return nil, err
+    end
+    local lines = vim.split(text, "\n")
+    return text, lines
   end
 
-  local lines = vim.split(text, "\n")
+  local text, lines = render_content()
+  if not text then
+    vim.notify("[SuperCsv ASCII Error] " .. tostring(lines), vim.log.levels.ERROR)
+    return nil, lines
+  end
+
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
-  if opts.style == "markdown" then
+  if cur_style == "markdown" or is_fenced then
     vim.bo[buf].filetype = "markdown"
+  else
+    vim.bo[buf].filetype = "text"
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  local max_line_w = 0
-  for _, l in ipairs(lines) do
-    local dw = vim.fn.strdisplaywidth(l)
-    if dw > max_line_w then max_line_w = dw end
+  local function calc_dims(content_lines)
+    local max_line_w = 0
+    for _, l in ipairs(content_lines) do
+      local dw = vim.fn.strdisplaywidth(l)
+      if dw > max_line_w then max_line_w = dw end
+    end
+    local width = math.min(vim.o.columns - 4, math.max(68, max_line_w + 4))
+    local height = math.min(vim.o.lines - 4, math.max(6, #content_lines + 2))
+    local row = math.max(0, math.floor((vim.o.lines - height) / 2))
+    local col = math.max(0, math.floor((vim.o.columns - width) / 2))
+    return width, height, row, col
   end
 
-  local width = math.min(vim.o.columns - 4, math.max(50, max_line_w + 4))
-  local height = math.min(vim.o.lines - 4, math.max(6, #lines + 2))
-  local row = math.max(0, math.floor((vim.o.lines - height) / 2))
-  local col = math.max(0, math.floor((vim.o.columns - width) / 2))
+  local width, height, row, col = calc_dims(lines)
+
+  local function make_title()
+    local fence_str = is_fenced and " (fenced)" or ""
+    return string.format(" SuperCsv Table Preview [%s%s] ", cur_style:upper(), fence_str)
+  end
+
+  local function make_footer(w)
+    if (w or width) < 64 then
+      return " [q] Close  [s] Save  [m] MD  [a] ASCII  [y] Yank "
+    elseif (w or width) < 82 then
+      return " [q] Close  [s] Save  [m] Markdown  [a] ASCII  [Tab] Cycle  [y] Yank "
+    else
+      return " [q] Close  [s] Save File  [m] Markdown  [a] ASCII  [Tab] Cycle  [f] Fence  [y] Yank "
+    end
+  end
+
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     row = row,
@@ -1560,27 +1656,176 @@ function M.view_ascii(opts)
     height = height,
     style = "minimal",
     border = "rounded",
-    title = string.format(" SuperCsv ASCII Table [%s] ", opts.style or "ascii"),
+    title = make_title(),
     title_pos = "center",
-    footer = " [q / <Esc>] Close  [y] Yank Table ",
+    footer = make_footer(width),
     footer_pos = "center",
   })
+
+  local function update_preview()
+    local new_text, new_lines = render_content()
+    if not new_text then
+      vim.notify("[SuperCsv] Failed to render style: " .. cur_style, vim.log.levels.WARN)
+      return
+    end
+    text = new_text
+    lines = new_lines
+
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+
+    if cur_style == "markdown" or is_fenced then
+      vim.bo[buf].filetype = "markdown"
+    else
+      vim.bo[buf].filetype = "text"
+    end
+
+    if vim.api.nvim_win_is_valid(win) then
+      local nw, nh, nr, nc = calc_dims(lines)
+      pcall(vim.api.nvim_win_set_config, win, {
+        row = nr,
+        col = nc,
+        width = nw,
+        height = nh,
+        title = make_title(),
+        footer = make_footer(nw),
+      })
+    end
+  end
+
+  local function prompt_save_file()
+    local ext = (cur_style == "markdown" or is_fenced) and ".md" or ".txt"
+    local default_name = "table" .. ext
+    if s and s.filepath and s.filepath ~= "" then
+      local base = vim.fn.fnamemodify(s.filepath, ":r")
+      default_name = base .. "_table" .. ext
+    elseif type(target) == "number" and vim.api.nvim_buf_is_valid(target) then
+      local bname = vim.api.nvim_buf_get_name(target)
+      if bname and bname ~= "" and not bname:match("^supercsv://") then
+        local base = vim.fn.fnamemodify(bname, ":r")
+        default_name = base .. "_table" .. ext
+      end
+    end
+
+    vim.ui.input({
+      prompt = string.format("Save %s table to file: ", cur_style),
+      default = default_name,
+      completion = "file",
+    }, function(input)
+      if not input or vim.trim(input) == "" then
+        return
+      end
+      local filepath = vim.fn.fnamemodify(vim.trim(input), ":p")
+      local ok, write_err = pcall(vim.fn.writefile, lines, filepath)
+      if ok then
+        vim.notify(string.format("[SuperCsv] Successfully saved %s table to %s (%d lines)", cur_style, filepath, #lines), vim.log.levels.INFO)
+      else
+        vim.notify("[SuperCsv Save Error] " .. tostring(write_err), vim.log.levels.ERROR)
+      end
+    end)
+  end
+
   vim.keymap.set("n", "q", function() pcall(vim.api.nvim_win_close, win, true) end, { buffer = buf, nowait = true })
   vim.keymap.set("n", "<Esc>", function() pcall(vim.api.nvim_win_close, win, true) end, { buffer = buf, nowait = true })
+
   vim.keymap.set("n", "y", function()
     vim.fn.setreg('"', text)
     pcall(vim.fn.setreg, "+", text)
-    vim.notify(string.format("[SuperCsv] Yanked %s table to clipboard!", opts.style or "ascii"))
-  end, { buffer = buf, nowait = true })
+    vim.notify(string.format("[SuperCsv] Yanked %s table to clipboard!", cur_style))
+  end, { buffer = buf, nowait = true, desc = "Yank Table to Clipboard" })
+
+  vim.keymap.set("n", "s", prompt_save_file, { buffer = buf, nowait = true, desc = "Save Table to File" })
+  vim.keymap.set("n", "w", prompt_save_file, { buffer = buf, nowait = true, desc = "Save Table to File" })
+  vim.keymap.set("n", "<C-s>", prompt_save_file, { buffer = buf, nowait = true, desc = "Save Table to File" })
+
+  vim.keymap.set("n", "m", function()
+    cur_style = "markdown"
+    update_preview()
+  end, { buffer = buf, nowait = true, desc = "Switch to Markdown Mode" })
+
+  vim.keymap.set("n", "a", function()
+    cur_style = "ascii"
+    update_preview()
+  end, { buffer = buf, nowait = true, desc = "Switch to ASCII Mode" })
+
+  vim.keymap.set("n", "u", function()
+    cur_style = "unicode"
+    update_preview()
+  end, { buffer = buf, nowait = true, desc = "Switch to Unicode Box Mode" })
+
+  vim.keymap.set("n", "r", function()
+    cur_style = "rounded"
+    update_preview()
+  end, { buffer = buf, nowait = true, desc = "Switch to Rounded Mode" })
+
+  vim.keymap.set("n", "g", function()
+    cur_style = "grid"
+    update_preview()
+  end, { buffer = buf, nowait = true, desc = "Switch to Grid Mode" })
+
+  vim.keymap.set("n", "f", function()
+    is_fenced = not is_fenced
+    update_preview()
+  end, { buffer = buf, nowait = true, desc = "Toggle Markdown Code Fence" })
+
+  local STYLES_CYCLE = { "ascii", "markdown", "unicode", "rounded", "grid", "simple" }
+  vim.keymap.set("n", "<Tab>", function()
+    local idx = 1
+    for i, st in ipairs(STYLES_CYCLE) do
+      if st == cur_style then idx = i; break end
+    end
+    local next_idx = (idx % #STYLES_CYCLE) + 1
+    cur_style = STYLES_CYCLE[next_idx]
+    update_preview()
+  end, { buffer = buf, nowait = true, desc = "Cycle Next Table Style" })
+
+  vim.keymap.set("n", "<S-Tab>", function()
+    local idx = 1
+    for i, st in ipairs(STYLES_CYCLE) do
+      if st == cur_style then idx = i; break end
+    end
+    local prev_idx = idx - 1
+    if prev_idx < 1 then prev_idx = #STYLES_CYCLE end
+    cur_style = STYLES_CYCLE[prev_idx]
+    update_preview()
+  end, { buffer = buf, nowait = true, desc = "Cycle Previous Table Style" })
+
+  -- Handle :w and :w <filename>
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = buf,
+    callback = function(ev)
+      local target_file = ev.file
+      if target_file and target_file ~= "" and not target_file:match("^nofile") then
+        local fp = vim.fn.fnamemodify(target_file, ":p")
+        local ok, write_err = pcall(vim.fn.writefile, lines, fp)
+        if ok then
+          vim.notify(string.format("[SuperCsv] Successfully saved %s table to %s (%d lines)", cur_style, fp, #lines), vim.log.levels.INFO)
+          pcall(vim.api.nvim_set_option_value, "modified", false, { buf = buf })
+        else
+          vim.notify("[SuperCsv Save Error] " .. tostring(write_err), vim.log.levels.ERROR)
+        end
+      else
+        prompt_save_file()
+      end
+    end,
+  })
+
   return buf, win
 end
 
---- Set viewport border style ("heavy", "ascii", "single", "rounded")
+--- Preview table in Markdown mode
+--- @param opts table|nil Formatting options
+function M.view_markdown(opts)
+  return M.view_ascii(vim.tbl_extend("force", opts or {}, { style = "markdown" }))
+end
+
+--- Set viewport border style ("ascii", "heavy", "single", "rounded")
 function M.set_border_style(style)
-  local valid = { heavy = true, ascii = true, single = true, rounded = true }
+  local valid = { ascii = true, heavy = true, single = true, rounded = true }
   local target = tostring(style or ""):lower()
   if not valid[target] then
-    target = "heavy"
+    target = "ascii"
   end
   config.options.border_style = target
   config.save_persisted()
@@ -1592,10 +1837,10 @@ function M.set_border_style(style)
   vim.notify(string.format("[SuperCsv] Viewport Border Style: %s (saved)", target:upper()))
 end
 
---- Toggle viewport border style between "heavy" and "ascii"
+--- Toggle viewport border style between "ascii" (default) and "heavy"
 function M.toggle_border_style(session)
   local s = session or M.get_active_session()
-  local cur = (s and s.border_style or config.options.border_style or "heavy"):lower()
+  local cur = (s and s.border_style or config.options.border_style or "ascii"):lower()
   local next_style = (cur == "ascii") and "heavy" or "ascii"
   config.options.border_style = next_style
   config.save_persisted()
@@ -1716,9 +1961,21 @@ function M.setup(opts)
           M.view_ascii({ style = "ascii" })
         end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Preview CSV as ASCII Table" })
 
+        vim.keymap.set("n", "<leader>cmd", function()
+          M.view_markdown()
+        end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Preview CSV as Markdown Table" })
+
+        vim.keymap.set("n", "<leader>cM", function()
+          M.view_markdown()
+        end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Preview CSV as Markdown Table" })
+
         vim.keymap.set("n", "<leader>cy", function()
           M.copy_ascii({ style = "ascii" })
         end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Copy CSV as ASCII Table" })
+
+        vim.keymap.set("n", "<leader>cym", function()
+          M.copy_markdown()
+        end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Copy CSV as Markdown Table" })
 
         if M.disabled_paths[path] then
           return
@@ -1753,9 +2010,21 @@ function M.setup(opts)
         M.view_ascii({ style = "ascii" })
       end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Preview JSON as ASCII Table" })
 
+      vim.keymap.set("n", "<leader>cmd", function()
+        M.view_markdown()
+      end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Preview JSON as Markdown Table" })
+
+      vim.keymap.set("n", "<leader>cM", function()
+        M.view_markdown()
+      end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Preview JSON as Markdown Table" })
+
       vim.keymap.set("n", "<leader>cy", function()
         M.copy_ascii({ style = "ascii" })
       end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Copy JSON as ASCII Table" })
+
+      vim.keymap.set("n", "<leader>cym", function()
+        M.copy_markdown()
+      end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Copy JSON as Markdown Table" })
 
       if config.options.auto_open_json and config.options.enabled and bname ~= "" then
         local path = vim.fn.fnamemodify(bname, ":p")

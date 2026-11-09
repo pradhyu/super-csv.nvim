@@ -29,7 +29,8 @@ local sqlite = require("super-csv.engine.sqlite")
 local viewport = require("super-csv.ui.viewport")
 local modals = require("super-csv.ui.modals")
 
-super_csv.setup({ auto_open = false })
+super_csv.setup({ auto_open = false, border_style = "ascii" })
+require("super-csv.config").options.border_style = "ascii"
 require("super-csv.config").options.zebra_rows = true
 require("super-csv.config").save_persisted()
 
@@ -469,12 +470,9 @@ assert_true(v_buf ~= nil and vim.api.nvim_buf_is_valid(v_buf), "view_ascii creat
 assert_true(v_win ~= nil and vim.api.nvim_win_is_valid(v_win), "view_ascii opened floating window")
 pcall(vim.api.nvim_win_close, v_win, true)
 
--- 12.8 Test Viewport Border Styles (heavy vs ascii vs single vs rounded)
-assert_eq(cfg.get_border_style(), "heavy", "Default border style is 'heavy'")
+-- 12.8 Test Viewport Border Styles (ascii as default, toggle to heavy/unicode/rounded)
+assert_eq(cfg.get_border_style(), "ascii", "Default border style is 'ascii'")
 
--- Switch border style to 'ascii'
-super_csv.set_border_style("ascii")
-assert_eq(cfg.get_border_style(), "ascii", "Border style set to 'ascii'")
 viewport.render(s_emp)
 local lines_ascii = vim.api.nvim_buf_get_lines(s_emp.view_buf, 0, 15, false)
 local has_plus_border = false
@@ -487,10 +485,10 @@ for _, l in ipairs(lines_ascii) do
     has_pipe_border = true
   end
 end
-assert_true(has_plus_border, "Viewport rendered with ASCII '+' and '-' borders")
-assert_true(has_pipe_border, "Viewport rendered with ASCII '|' borders")
+assert_true(has_plus_border, "Default viewport rendered with ASCII '+' and '-' borders")
+assert_true(has_pipe_border, "Default viewport rendered with ASCII '|' borders")
 
--- Toggle border style back to 'heavy'
+-- Toggle border style from 'ascii' -> 'heavy'
 local toggled = super_csv.toggle_border_style(s_emp)
 assert_eq(toggled, "heavy", "toggle_border_style toggled 'ascii' -> 'heavy'")
 viewport.render(s_emp)
@@ -502,15 +500,47 @@ for _, l in ipairs(lines_heavy) do
     break
   end
 end
-assert_true(has_heavy_border, "Viewport restored to 'heavy' ┏━ borders")
+assert_true(has_heavy_border, "Viewport switched to 'heavy' ┏━ borders")
+
+-- Toggle border style back from 'heavy' -> 'ascii'
+local toggled_back = super_csv.toggle_border_style(s_emp)
+assert_eq(toggled_back, "ascii", "toggle_border_style toggled 'heavy' -> 'ascii'")
 
 -- Test command dispatchers for style & ascii
-super_csv.command("style ascii")
-assert_eq(cfg.get_border_style(), "ascii", "super_csv.command('style ascii') updated style")
+super_csv.command("style heavy")
+assert_eq(cfg.get_border_style(), "heavy", "super_csv.command('style heavy') updated style to heavy")
 super_csv.command("toggle_ascii")
-assert_eq(cfg.get_border_style(), "heavy", "super_csv.command('toggle_ascii') restored heavy")
+assert_eq(cfg.get_border_style(), "ascii", "super_csv.command('toggle_ascii') restored default ascii")
 super_csv.command("copy_ascii markdown 5")
-assert_true(vim.fn.getreg('"'):find("|:---") ~= nil, "super_csv.command('copy_ascii markdown 5') yanked markdown table")
+assert_true(vim.fn.getreg('"'):find("|:---") ~= nil or vim.fn.getreg('"'):find("| :---") ~= nil, "super_csv.command('copy_ascii markdown 5') yanked markdown table")
+
+-- 12.9 Test Markdown Fencing & save_to_file / save_markdown
+local sample_fenced = ascii_engine.from_csv(sample_csv, { style = "markdown", fence = true })
+assert_true(sample_fenced:find("^```markdown") ~= nil, "Fenced markdown table starts with ```markdown")
+assert_true(sample_fenced:find("```$") ~= nil, "Fenced markdown table ends with ```")
+
+local tmp_save_md = "/tmp/super_csv_test_table.md"
+local ok_save, save_path = super_csv.save_markdown(tmp_save_md, { max_rows = 3 })
+assert_true(ok_save == true, "save_markdown succeeded")
+assert_true(vim.fn.filereadable(tmp_save_md) == 1, "Saved markdown table file is readable")
+local read_lines = vim.fn.readfile(tmp_save_md)
+assert_true(#read_lines >= 4, "Saved markdown file contains lines")
+assert_true(read_lines[1]:find("|") ~= nil, "Saved markdown file has pipe header")
+pcall(vim.fn.delete, tmp_save_md)
+
+-- 12.10 Test view_markdown and interactive view_ascii buffer controls
+local md_buf, md_win = super_csv.view_markdown({ max_rows = 4 })
+assert_true(md_buf ~= nil and vim.api.nvim_buf_is_valid(md_buf), "view_markdown created buffer")
+assert_eq(vim.bo[md_buf].filetype, "markdown", "view_markdown sets filetype to markdown")
+pcall(vim.api.nvim_win_close, md_win, true)
+
+-- Test copy_markdown API and command
+local ok_copymd, copymd_txt = super_csv.copy_markdown({ max_rows = 2 })
+assert_true(ok_copymd == true, "copy_markdown succeeded")
+assert_true(copymd_txt:find("|") ~= nil, "copy_markdown output contains pipes")
+
+super_csv.command("copy_markdown 3")
+assert_true(vim.fn.getreg('"'):find("|") ~= nil, ":SuperCsv copy_markdown yanked to register")
 
 print(string.format("\n=== SuperCsv Tests: %d passed, %d failed ===", passed, failed))
 if failed > 0 then
