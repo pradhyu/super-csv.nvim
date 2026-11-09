@@ -7,6 +7,53 @@ local config = require("super-csv.config")
 
 local ns = vim.api.nvim_create_namespace("super_csv_viewport")
 
+local BORDER_SETS = {
+  heavy = {
+    top = { "┏", "┳", "╦", "┓", "━" },
+    mid = { "┣", "╋", "╬", "┫", "━" },
+    bot = { "┗", "┻", "╩", "┛", "━" },
+    v_outer = "┃",
+    v_inner = "│",
+    v_pin   = "║",
+    sub_top_l = "  ┏━",
+    sub_fill = "━",
+    sub_top_r = "┓",
+  },
+  ascii = {
+    top = { "+", "+", "+", "+", "-" },
+    mid = { "+", "+", "+", "+", "=" },
+    bot = { "+", "+", "+", "+", "-" },
+    v_outer = "|",
+    v_inner = "|",
+    v_pin   = "|",
+    sub_top_l = "  +-",
+    sub_fill = "-",
+    sub_top_r = "+",
+  },
+  single = {
+    top = { "┌", "┬", "┬", "┐", "─" },
+    mid = { "├", "┼", "┼", "┤", "─" },
+    bot = { "└", "┴", "┴", "┘", "─" },
+    v_outer = "│",
+    v_inner = "│",
+    v_pin   = "║",
+    sub_top_l = "  ┌─",
+    sub_fill = "─",
+    sub_top_r = "┐",
+  },
+  rounded = {
+    top = { "╭", "┬", "┬", "╮", "─" },
+    mid = { "├", "┼", "┼", "┤", "─" },
+    bot = { "╰", "┴", "┴", "╯", "─" },
+    v_outer = "│",
+    v_inner = "│",
+    v_pin   = "║",
+    sub_top_l = "  ╭─",
+    sub_fill = "─",
+    sub_top_r = "╮",
+  },
+}
+
 --- Pad or truncate a UTF-8 string to exact display width
 local function fit_width(str, width, align_right)
   str = tostring(str == nil and "" or str):gsub("[\r\n\t]", " ")
@@ -318,6 +365,9 @@ function M.render(session)
   table.insert(lines, banner)
   add_hl(0, 0, #banner, "SuperCsvHeaderBanner")
 
+  local border_style = (session.border_style or config.options.border_style or "heavy"):lower()
+  local bs = BORDER_SETS[border_style] or BORDER_SETS.heavy
+
   -- Helper to build horizontal border lines
   local row_gutter_w = 7
   local function build_border(left_ch, mid_ch, pin_mid_ch, right_ch, fill_ch)
@@ -334,7 +384,7 @@ function M.render(session)
     return table.concat(parts)
   end
 
-  local top_border = build_border("┏", "┳", "╦", "┓", "━")
+  local top_border = build_border(bs.top[1], bs.top[2], bs.top[3], bs.top[4], bs.top[5])
   local grid_display_w = vim.fn.strdisplaywidth(top_border)
 
   -- 1b. Collapsible Top Comments Section (shows all `#` comments from anywhere in the CSV with their file line numbers)
@@ -378,11 +428,11 @@ function M.render(session)
       for i = 1, max_inline_comments do
         local cm = comments[i]
         local l_idx = #lines
-        local b_left = "┃"
+        local b_left = bs.v_outer
         local lnr_str = fit_width(string.format(" L%-4d", cm.line_num), row_gutter_w, false)
-        local b_mid = "│"
+        local b_mid = bs.v_inner
         local c_body = " " .. fit_width(cm.text or "", text_avail, false) .. " "
-        local b_right = "┃"
+        local b_right = bs.v_outer
         local full_cm = b_left .. lnr_str .. b_mid .. c_body .. b_right
         table.insert(lines, full_cm)
 
@@ -400,12 +450,12 @@ function M.render(session)
       if num_comments > max_inline_comments then
         local more_cnt = num_comments - max_inline_comments
         local l_idx = #lines
-        local b_left = "┃"
+        local b_left = bs.v_outer
         local lnr_str = fit_width("  ...", row_gutter_w, false)
-        local b_mid = "│"
+        local b_mid = bs.v_inner
         local more_txt = string.format(" ... +%d more comment lines (press g# to view all %d comments)", more_cnt, num_comments)
         local c_body = " " .. fit_width(more_txt, text_avail, false) .. " "
-        local b_right = "┃"
+        local b_right = bs.v_outer
         local full_more = b_left .. lnr_str .. b_mid .. c_body .. b_right
         table.insert(lines, full_more)
         add_hl(l_idx, 0, #full_more, "SuperCsvCommentBar")
@@ -454,7 +504,7 @@ function M.render(session)
       cur_byte = cur_byte + #txt
     end
 
-    push("┃", "SuperCsvBorderPinned")
+    push(bs.v_outer, "SuperCsvBorderPinned")
     push(fit_width("  TABLE", row_gutter_w, false), "SuperCsvHeaderPinned")
 
     local idx = 1
@@ -464,7 +514,7 @@ function M.render(session)
       local c = vc.col
       local parent = split_nested_header(session.headers[c] or ("col_" .. c))
       local is_pin_sep = (idx > 1 and vis_cols[idx - 1].pinned and not vc.pinned)
-      push(is_pin_sep and "║" or "┃", is_pin_sep and "SuperCsvBorderPinned" or "SuperCsvBorder")
+      push(is_pin_sep and bs.v_pin or bs.v_outer, is_pin_sep and "SuperCsvBorderPinned" or "SuperCsvBorder")
 
       if parent then
         -- Find contiguous visible columns belonging to the same nested parent table and pin state
@@ -519,7 +569,7 @@ function M.render(session)
       end
     end
 
-    push("┃", "SuperCsvBorderPinned")
+    push(bs.v_outer, "SuperCsvBorderPinned")
     local full = table.concat(segs)
     table.insert(lines, full)
     for _, h in ipairs(seg_hls) do
@@ -541,7 +591,7 @@ function M.render(session)
       cur_byte = cur_byte + #txt
     end
 
-    push("┃", "SuperCsvBorderPinned")
+    push(bs.v_outer, "SuperCsvBorderPinned")
     local gutter_label = is_second_line and fit_width("  ROW #", row_gutter_w, false) or fit_width("  EXCEL", row_gutter_w, false)
     push(gutter_label, "SuperCsvHeaderPinned")
 
@@ -549,7 +599,7 @@ function M.render(session)
       local c = vc.col
       local w = session.col_widths[c] or 14
       local is_pin_sep = (idx > 1 and vis_cols[idx - 1].pinned and not vc.pinned)
-      push(is_pin_sep and "║" or "┃", is_pin_sep and "SuperCsvBorderPinned" or "SuperCsvBorder")
+      push(is_pin_sep and bs.v_pin or bs.v_outer, is_pin_sep and "SuperCsvBorderPinned" or "SuperCsvBorder")
 
       local h_hl
       if use_rainbow then
@@ -586,7 +636,7 @@ function M.render(session)
 
       push(cell_txt, h_hl)
     end
-    push("┃", "SuperCsvBorderPinned")
+    push(bs.v_outer, "SuperCsvBorderPinned")
 
     local full = table.concat(segs)
     table.insert(lines, full)
@@ -601,7 +651,7 @@ function M.render(session)
   end
   build_header_line(true)
 
-  local mid_border = build_border("┣", "╋", "╬", "┫", "━")
+  local mid_border = build_border(bs.mid[1], bs.mid[2], bs.mid[3], bs.mid[4], bs.mid[5])
   table.insert(lines, mid_border)
   add_hl(#lines - 1, 0, #mid_border, "SuperCsvBorderPinned")
 
@@ -651,17 +701,18 @@ function M.render(session)
       st.num_cols,
       st.num_cols == 1 and "" or "s"
     )
-    local title_line = "│" .. fit_width("  ↳ SUB", row_gutter_w, false) .. "│" .. fit_width(title_txt, inner_avail, false) .. "│"
+    local vi = bs.v_inner
+    local title_line = vi .. fit_width("  ↳ SUB", row_gutter_w, false) .. vi .. fit_width(title_txt, inner_avail, false) .. vi
     local t_idx = #lines
     table.insert(lines, title_line)
-    local p1 = #"│"
+    local p1 = #vi
     local p2 = p1 + #fit_width("  ↳ SUB", row_gutter_w, false)
-    local p3 = p2 + #"│"
+    local p3 = p2 + #vi
     add_hl(t_idx, 0, p1, "SuperCsvBorderPinned")
     add_hl(t_idx, p1, p2, "SuperCsvHeaderPinned")
     add_hl(t_idx, p2, p3, "SuperCsvBorderPinned")
-    add_hl(t_idx, p3, #title_line - #"│", "SuperCsvHeaderBanner")
-    add_hl(t_idx, #title_line - #"│", #title_line, "SuperCsvBorderPinned")
+    add_hl(t_idx, p3, #title_line - #vi, "SuperCsvHeaderBanner")
+    add_hl(t_idx, #title_line - #vi, #title_line, "SuperCsvBorderPinned")
 
     -- Build subtable column header line
     local hdr_parts = { "  #  " }
@@ -671,8 +722,8 @@ function M.render(session)
     if st.num_cols > sub_cols then
       table.insert(hdr_parts, string.format(" (+%d cols) ", st.num_cols - sub_cols))
     end
-    local sub_hdr_body = "  ┏━" .. string.rep("━", math.min(inner_avail - 6, vim.fn.strdisplaywidth(table.concat(hdr_parts, "│")))) .. "┓"
-    local sh_line = "│" .. string.rep(" ", row_gutter_w) .. "│ " .. fit_width("│" .. table.concat(hdr_parts, "│") .. "│", inner_avail - 1, false) .. "│"
+    local sub_hdr_body = bs.sub_top_l .. string.rep(bs.sub_fill, math.min(inner_avail - 6, vim.fn.strdisplaywidth(table.concat(hdr_parts, vi)))) .. bs.sub_top_r
+    local sh_line = vi .. string.rep(" ", row_gutter_w) .. vi .. " " .. fit_width(vi .. table.concat(hdr_parts, vi) .. vi, inner_avail - 1, false) .. vi
     local sh_idx = #lines
     table.insert(lines, sh_line)
     add_hl(sh_idx, 0, #sh_line, "SuperCsvHeaderPinned")
@@ -680,7 +731,7 @@ function M.render(session)
 
     -- Render subtable rows
     if st.num_rows == 0 then
-      local emp_sub = "│" .. string.rep(" ", row_gutter_w) .. "│ " .. fit_width("  (Empty array [])", inner_avail - 1, false) .. "│"
+      local emp_sub = vi .. string.rep(" ", row_gutter_w) .. vi .. " " .. fit_width("  (Empty array [])", inner_avail - 1, false) .. vi
       table.insert(lines, emp_sub)
       add_hl(#lines - 1, 0, #emp_sub, "SuperCsvTypeNull")
     else
@@ -696,15 +747,15 @@ function M.render(session)
           end
           table.insert(r_parts, " " .. fit_width(sv, sub_widths[sc], false) .. " ")
         end
-        local sr_body = "│" .. table.concat(r_parts, "│") .. "│"
-        local sr_line = "│" .. string.rep(" ", row_gutter_w) .. "│ " .. fit_width(sr_body, inner_avail - 1, false) .. "│"
+        local sr_body = vi .. table.concat(r_parts, vi) .. vi
+        local sr_line = vi .. string.rep(" ", row_gutter_w) .. vi .. " " .. fit_width(sr_body, inner_avail - 1, false) .. vi
         local sr_idx = #lines
         table.insert(lines, sr_line)
         add_hl(sr_idx, 0, #sr_line, (sr % 2 == 0) and "SuperCsvColPinnedEven" or "SuperCsvColPinnedOdd")
       end
       if st.num_rows > max_sub_rows then
         local more_sub = string.format("  … +%d more subtable rows (press <CR> on cell to open full %d-row subtable)", st.num_rows - max_sub_rows, st.num_rows)
-        local m_line = "│" .. string.rep(" ", row_gutter_w) .. "│ " .. fit_width(more_sub, inner_avail - 1, false) .. "│"
+        local m_line = vi .. string.rep(" ", row_gutter_w) .. vi .. " " .. fit_width(more_sub, inner_avail - 1, false) .. vi
         table.insert(lines, m_line)
         add_hl(#lines - 1, 0, #m_line, "SuperCsvCommentBar")
       end
@@ -712,7 +763,7 @@ function M.render(session)
   end
 
   if #rows == 0 then
-    local empty_line = "┃ " .. fit_width("No rows match the active filter / grep criteria. Press 'F' or '<leader>cF' to clear filters.", win_width - 4, false) .. " ┃"
+    local empty_line = bs.v_outer .. " " .. fit_width("No rows match the active filter / grep criteria. Press 'F' or '<leader>cF' to clear filters.", win_width - 4, false) .. " " .. bs.v_outer
     table.insert(lines, empty_line)
     add_hl(#lines - 1, 0, #empty_line, "SuperCsvTypeNull")
   else
@@ -740,7 +791,7 @@ function M.render(session)
         cur_byte = cur_byte + #txt
       end
 
-      push("│", "SuperCsvBorder")
+      push(bs.v_inner, "SuperCsvBorder")
       local r_num_txt = fit_width(tostring(row_obj.rowid or abs_row) .. " ", row_gutter_w, true)
       push(r_num_txt, is_cur_row and "SuperCsvHeaderActive" or "SuperCsvHeaderType")
 
@@ -748,7 +799,7 @@ function M.render(session)
         local c = vc.col
         local w = session.col_widths[c] or 14
         local is_pin_sep = (idx > 1 and vis_cols[idx - 1].pinned and not vc.pinned)
-        push(is_pin_sep and "║" or "│", is_pin_sep and "SuperCsvBorderPinned" or "SuperCsvBorder")
+        push(is_pin_sep and bs.v_pin or bs.v_inner, is_pin_sep and "SuperCsvBorderPinned" or "SuperCsvBorder")
 
         local raw_val = row_obj.cells[c] or ""
         local is_cur_cell = (is_cur_row and c == session.cur_col)
@@ -853,7 +904,7 @@ function M.render(session)
         push(cell_str, cell_hl, fg_hl)
       end
 
-      push("│", "SuperCsvBorder")
+      push(bs.v_inner, "SuperCsvBorder")
       local full_row = table.concat(segs)
       table.insert(lines, full_row)
       for _, h in ipairs(seg_hls) do
@@ -866,7 +917,7 @@ function M.render(session)
     end
   end
 
-  local bot_border = build_border("┗", "┻", "╩", "┛", "━")
+  local bot_border = build_border(bs.bot[1], bs.bot[2], bs.bot[3], bs.bot[4], bs.bot[5])
   table.insert(lines, bot_border)
   add_hl(#lines - 1, 0, #bot_border, "SuperCsvBorderPinned")
 

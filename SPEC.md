@@ -159,6 +159,9 @@ Every common spreadsheet and data-wrangling workflow is exposed both as an intui
 | `:SuperCsv heatmap` | `gm` | Toggle conditional heatmap coloring / inline data bars on numeric columns |
 | `:SuperCsv sql <SELECT ...>` | `gq` | Run any SQLite SQL query against the `csv` table and open the result in an interactive grid |
 | `:SuperCsv edit` | `<CR>` / `e` | Edit active cell value (with `u` undo / `<C-r>` redo via SQLite savepoints) |
+| `:SuperCsv ascii [style] [limit]` | `<leader>ca` | Preview formatted ASCII table in float (`ascii`, `markdown`, `unicode`, `rounded`, `grid`, `simple`) |
+| `:SuperCsv copy_ascii [style] [limit]` | `ya` / `<leader>cy` | Copy formatted ASCII / Markdown (`ym`) / Unicode (`yu`) table directly to clipboard |
+| `:SuperCsv style [style\|toggle]` | `gA` / `gB` | Switch or toggle viewport grid border style (`heavy`, `ascii`, `single`, `rounded`) |
 | `:SuperCsv export <path>` | `<leader>ce` | Export current filtered/sorted/projected view to `.csv`, `.tsv`, `.json`, or `.md` table |
 | `:SuperCsv save` / `:w` | `<leader>cw` | Atomically write all edited cells/rows back to the source CSV file |
 
@@ -177,6 +180,8 @@ Every common spreadsheet and data-wrangling workflow is exposed both as an intui
 | `gG` / `:<number>` | Jump directly to a specific row number (`1..1,000,000`) |
 | `+` / `-` / `=` | Increase / Decrease / Auto-fit current column width |
 | `yy` / `Y` | Yank active cell value (`yy`) or yank entire row as JSON/CSV (`Y`) |
+| `ya` / `ym` / `yu` | Yank table as ASCII (`ya`), Markdown (`ym`), or Unicode Box (`yu`) to clipboard |
+| `gA` / `gB` | Toggle Viewport border style between ASCII (`+----+`) and Heavy Unicode (`┏━━━━┓`) |
 
 ---
 

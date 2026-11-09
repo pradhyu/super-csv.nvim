@@ -12,6 +12,7 @@ M.defaults = {
   rainbow_columns = true,    -- Rainbow CSV per-column foreground colors from active Neovim theme (toggle with gr)
   zebra_columns = false,     -- Alternating background colors for even/odd columns
   zebra_rows = true,         -- Subtle alternating background colors for even/odd rows (Excel banded rows)
+  border_style = "heavy",    -- Viewport grid border style: "heavy" (default), "ascii", "single", "rounded"
   show_footer_stats = true,  -- Show Excel-style COUNT / SUM / AVG / MIN / MAX bar at bottom
   heatmap = false,           -- Conditional numeric heatmap coloring (toggle with gm)
   comment_char = "#",        -- Default comment prefix for CSV/TSV files (e.g. "#", "//", ";")
@@ -49,6 +50,10 @@ function M.get_json_comment_char()
   return "//"
 end
 
+function M.get_border_style()
+  return M.options.border_style or "heavy"
+end
+
 function M.load_persisted()
   if vim.fn.filereadable(state_file) == 1 then
     local ok, lines = pcall(vim.fn.readfile, state_file)
@@ -59,6 +64,7 @@ function M.load_persisted()
         if data.zebra_rows ~= nil then M.options.zebra_rows = data.zebra_rows end
         if data.zebra_columns ~= nil then M.options.zebra_columns = data.zebra_columns end
         if data.heatmap ~= nil then M.options.heatmap = data.heatmap end
+        if data.border_style ~= nil then M.options.border_style = data.border_style end
       end
     end
   end
@@ -70,6 +76,7 @@ function M.save_persisted()
     zebra_rows = M.options.zebra_rows,
     zebra_columns = M.options.zebra_columns,
     heatmap = M.options.heatmap,
+    border_style = M.options.border_style,
   }
   pcall(vim.fn.writefile, { vim.fn.json_encode(data) }, state_file)
 end

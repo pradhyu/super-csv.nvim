@@ -7,6 +7,7 @@ local json_engine = require("super-csv.engine.json")
 local sqlite = require("super-csv.engine.sqlite")
 local viewport = require("super-csv.ui.viewport")
 local modals = require("super-csv.ui.modals")
+local ascii_engine = require("super-csv.engine.ascii")
 
 -- Map of view_buf -> session and filepath -> session
 M.sessions_by_buf = {}
@@ -524,6 +525,14 @@ local function attach_keymaps(session)
     vim.notify("[SuperCsv] Alternating Column Colors (Zebra Cols): " .. (cfg.options.zebra_columns and "ON (saved)" or "OFF (saved)"))
   end, "Toggle Alternating Column Colors")
 
+  map("gA", function()
+    M.toggle_border_style(session)
+  end, "Toggle Viewport ASCII / Heavy Border Style")
+
+  map("gB", function()
+    M.toggle_border_style(session)
+  end, "Toggle Viewport Border Style")
+
   map("<leader>cv", function()
     M.switch_to_normal_csv(session)
   end, "Switch Back to Normal Raw CSV / JSON Buffer")
@@ -692,6 +701,22 @@ local function attach_keymaps(session)
       vim.notify(string.format("[SuperCsv] Yanked Row #%d as JSON to clipboard", row_obj.rowid))
     end
   end, "Yank Entire Row as JSON")
+
+  map("ya", function()
+    M.copy_ascii({ style = "ascii" })
+  end, "Yank Table as ASCII Table (+ register)")
+
+  map("ym", function()
+    M.copy_ascii({ style = "markdown" })
+  end, "Yank Table as Markdown Table (+ register)")
+
+  map("yu", function()
+    M.copy_ascii({ style = "unicode" })
+  end, "Yank Table as Unicode Box Table (+ register)")
+
+  map("<leader>ca", function()
+    M.view_ascii({ style = "ascii" })
+  end, "Preview Formatted ASCII Table")
 
   map("u", function()
     local ok, msg = sqlite.undo(session)
@@ -1313,6 +1338,30 @@ function M.command(args)
       vim.notify("[SuperCsv] Enabled")
     end
     return
+  elseif sub == "style" or sub == "border_style" then
+    local arg = parts[2]
+    if arg == "toggle" then
+      M.toggle_border_style()
+    elseif arg and arg ~= "" then
+      M.set_border_style(arg)
+    else
+      local cur = config.get_border_style()
+      vim.notify(string.format("[SuperCsv] Current Border Style: %s (Options: heavy, ascii, single, rounded, toggle)", cur:upper()))
+    end
+    return
+  elseif sub == "toggle_ascii" then
+    M.toggle_border_style()
+    return
+  elseif sub == "ascii" or sub == "to_ascii" or sub == "view_ascii" then
+    local style = parts[2] or "ascii"
+    local limit = tonumber(parts[3])
+    M.view_ascii({ style = style, max_rows = limit })
+    return
+  elseif sub == "copy_ascii" or sub == "yank_ascii" then
+    local style = parts[2] or "ascii"
+    local limit = tonumber(parts[3])
+    M.copy_ascii({ style = style, max_rows = limit })
+    return
   end
 
   local session = M.get_active_session()
@@ -1444,6 +1493,120 @@ function M.command(args)
   end
 end
 
+--- Convert CSV, JSON, active session, or table into formatted ASCII/Markdown/Unicode table
+--- @param source any Session, file path, raw string, buffer ID, or { headers, rows }
+--- @param opts table|nil Formatting options: style ("ascii"|"markdown"|"unicode"|"rounded"|"grid"|"simple"), max_rows, show_row_numbers, etc.
+function M.to_ascii(source, opts)
+  return ascii_engine.to_ascii(source, opts)
+end
+
+--- Copy formatted ASCII/Markdown/Unicode table to system clipboard
+--- @param opts table|nil Formatting options
+function M.copy_ascii(opts)
+  opts = opts or {}
+  local s = M.get_active_session()
+  local target = s or vim.api.nvim_get_current_buf()
+  local text, err = ascii_engine.to_ascii(target, opts)
+  if not text then
+    vim.notify("[SuperCsv ASCII Error] " .. tostring(err), vim.log.levels.ERROR)
+    return false, err
+  end
+  vim.fn.setreg('"', text)
+  pcall(vim.fn.setreg, "+", text)
+  local style_name = opts.style or "ascii"
+  local line_count = #vim.split(text, "\n")
+  vim.notify(string.format("[SuperCsv] Copied %s table (%d lines) to clipboard!", style_name, line_count))
+  return true, text
+end
+
+--- Open formatted ASCII/Markdown/Unicode table in a floating preview or scratch buffer
+--- @param opts table|nil Formatting options
+function M.view_ascii(opts)
+  opts = opts or {}
+  local s = M.get_active_session()
+  local target = s or vim.api.nvim_get_current_buf()
+  local text, err = ascii_engine.to_ascii(target, opts)
+  if not text then
+    vim.notify("[SuperCsv ASCII Error] " .. tostring(err), vim.log.levels.ERROR)
+    return nil, err
+  end
+
+  local lines = vim.split(text, "\n")
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  if opts.style == "markdown" then
+    vim.bo[buf].filetype = "markdown"
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+
+  local max_line_w = 0
+  for _, l in ipairs(lines) do
+    local dw = vim.fn.strdisplaywidth(l)
+    if dw > max_line_w then max_line_w = dw end
+  end
+
+  local width = math.min(vim.o.columns - 4, math.max(50, max_line_w + 4))
+  local height = math.min(vim.o.lines - 4, math.max(6, #lines + 2))
+  local row = math.max(0, math.floor((vim.o.lines - height) / 2))
+  local col = math.max(0, math.floor((vim.o.columns - width) / 2))
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = string.format(" SuperCsv ASCII Table [%s] ", opts.style or "ascii"),
+    title_pos = "center",
+    footer = " [q / <Esc>] Close  [y] Yank Table ",
+    footer_pos = "center",
+  })
+  vim.keymap.set("n", "q", function() pcall(vim.api.nvim_win_close, win, true) end, { buffer = buf, nowait = true })
+  vim.keymap.set("n", "<Esc>", function() pcall(vim.api.nvim_win_close, win, true) end, { buffer = buf, nowait = true })
+  vim.keymap.set("n", "y", function()
+    vim.fn.setreg('"', text)
+    pcall(vim.fn.setreg, "+", text)
+    vim.notify(string.format("[SuperCsv] Yanked %s table to clipboard!", opts.style or "ascii"))
+  end, { buffer = buf, nowait = true })
+  return buf, win
+end
+
+--- Set viewport border style ("heavy", "ascii", "single", "rounded")
+function M.set_border_style(style)
+  local valid = { heavy = true, ascii = true, single = true, rounded = true }
+  local target = tostring(style or ""):lower()
+  if not valid[target] then
+    target = "heavy"
+  end
+  config.options.border_style = target
+  config.save_persisted()
+  local s = M.get_active_session()
+  if s then
+    s.border_style = target
+    viewport.render(s)
+  end
+  vim.notify(string.format("[SuperCsv] Viewport Border Style: %s (saved)", target:upper()))
+end
+
+--- Toggle viewport border style between "heavy" and "ascii"
+function M.toggle_border_style(session)
+  local s = session or M.get_active_session()
+  local cur = (s and s.border_style or config.options.border_style or "heavy"):lower()
+  local next_style = (cur == "ascii") and "heavy" or "ascii"
+  config.options.border_style = next_style
+  config.save_persisted()
+  if s then
+    s.border_style = next_style
+    viewport.render(s)
+  end
+  vim.notify(string.format("[SuperCsv] Switched Border Style to: %s (saved)", next_style:upper()))
+  return next_style
+end
+
 function M.setup(opts)
   config.setup(opts)
   highlights.setup()
@@ -1549,6 +1712,14 @@ function M.setup(opts)
         local raw_name = vim.api.nvim_buf_get_name(ev.buf)
         if raw_name == "" or raw_name:match("^supercsv://") then return end
         local path = vim.fn.fnamemodify(raw_name, ":p")
+        vim.keymap.set("n", "<leader>ca", function()
+          M.view_ascii({ style = "ascii" })
+        end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Preview CSV as ASCII Table" })
+
+        vim.keymap.set("n", "<leader>cy", function()
+          M.copy_ascii({ style = "ascii" })
+        end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Copy CSV as ASCII Table" })
+
         if M.disabled_paths[path] then
           return
         end
@@ -1577,6 +1748,14 @@ function M.setup(opts)
       vim.keymap.set("n", "<leader>cj", function()
         M.command("json_to_csv")
       end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Convert JSON to .csv File & Open" })
+
+      vim.keymap.set("n", "<leader>ca", function()
+        M.view_ascii({ style = "ascii" })
+      end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Preview JSON as ASCII Table" })
+
+      vim.keymap.set("n", "<leader>cy", function()
+        M.copy_ascii({ style = "ascii" })
+      end, { buffer = ev.buf, silent = true, desc = "SuperCsv: Copy JSON as ASCII Table" })
 
       if config.options.auto_open_json and config.options.enabled and bname ~= "" then
         local path = vim.fn.fnamemodify(bname, ":p")

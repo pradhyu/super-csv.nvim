@@ -390,6 +390,128 @@ if vim.fn.filereadable(million_path) == 1 then
   print(string.format("[BENCH] 1,000,000-row x 100-col initial slice read: %.2f ms", elapsed_ms))
 end
 
+-- 12. Test ASCII & Markdown Table Generator and Border Styles
+local ascii_engine = require("super-csv.engine.ascii")
+
+-- 12.1 Test ASCII generation from CSV text
+local sample_csv = [[
+name,age,role,salary
+Alice,30,Engineer,120000
+Bob,25,Designer,95000
+Charlie,35,Manager,145000
+]]
+local ascii_tbl = ascii_engine.from_csv(sample_csv, { style = "ascii" })
+assert_true(ascii_tbl:find("%+%-+%-+%-+%-+%+") ~= nil, "ASCII table has +----+ top/bot border")
+assert_true(ascii_tbl:find("| Alice") ~= nil, "ASCII table contains Alice row")
+assert_true(ascii_tbl:find("| name") ~= nil, "ASCII table contains name header")
+
+-- 12.2 Test Markdown table generation with alignment
+local md_tbl = ascii_engine.from_csv(sample_csv, { style = "markdown" })
+assert_true(md_tbl:find("|:---") ~= nil or md_tbl:find("| :---") ~= nil, "Markdown table has left alignment :---")
+assert_true(md_tbl:find("%-%-%-:") ~= nil, "Markdown table has right alignment ---: for numbers")
+assert_true(md_tbl:find("| Alice") ~= nil and md_tbl:find("30") ~= nil, "Markdown table formats columns with pipes")
+
+-- Test Markdown pipe escaping
+local csv_with_pipe = "col1,col2\nValue|With|Pipes,123\n"
+local md_escaped = ascii_engine.from_csv(csv_with_pipe, { style = "markdown" })
+assert_true(md_escaped:find("Value\\|With\\|Pipes") ~= nil, "Markdown table escapes pipe characters")
+
+-- 12.3 Test Unicode box drawing
+local uni_tbl = ascii_engine.from_csv(sample_csv, { style = "unicode" })
+assert_true(uni_tbl:find("┌") ~= nil, "Unicode table has ┌ top-left border")
+assert_true(uni_tbl:find("└") ~= nil, "Unicode table has └ bot-left border")
+assert_true(uni_tbl:find("│") ~= nil, "Unicode table has │ vertical dividers")
+
+-- 12.4 Test Rounded and Grid styles
+local rounded_tbl = ascii_engine.from_csv(sample_csv, { style = "rounded" })
+assert_true(rounded_tbl:find("╭") ~= nil, "Rounded table has ╭ top-left border")
+assert_true(rounded_tbl:find("╰") ~= nil, "Rounded table has ╰ bot-left border")
+
+local grid_tbl = ascii_engine.from_csv(sample_csv, { style = "grid" })
+assert_true(grid_tbl:find("%+%=+%=+") ~= nil, "Grid table has +=+ header divider")
+
+local simple_tbl = ascii_engine.from_csv(sample_csv, { style = "simple" })
+assert_true(simple_tbl:find("name%s+age") ~= nil, "Simple table has space separated columns")
+
+-- 12.5 Test ASCII generation from JSON
+local sample_json = [[
+[
+  { "id": 1, "product": "Widget A", "price": 19.99, "active": true },
+  { "id": 2, "product": "Widget B", "price": 29.50, "active": false }
+]
+]]
+local json_ascii = ascii_engine.from_json(sample_json, { style = "ascii" })
+assert_true(json_ascii ~= nil, "Generated ASCII table from JSON")
+assert_true(json_ascii:find("| Widget A") ~= nil, "JSON ASCII table has Widget A")
+assert_true(json_ascii:find("| 19.99") ~= nil or json_ascii:find("19.99") ~= nil, "JSON ASCII table has price")
+assert_true(json_ascii:find("| true") ~= nil or json_ascii:find("true") ~= nil, "JSON ASCII table has boolean true")
+
+-- Test JSONL / NDJSON ASCII generation
+local sample_jsonl = '{"user": "dev1", "score": 98}\n{"user": "dev2", "score": 85}\n'
+local jsonl_ascii = ascii_engine.from_json(sample_jsonl, { style = "markdown" })
+assert_true(jsonl_ascii:find("dev1") ~= nil, "JSONL markdown table parsed user dev1")
+assert_true(jsonl_ascii:find("98") ~= nil, "JSONL markdown table parsed score 98")
+
+-- 12.6 Test unified to_ascii on active session
+assert_true(s_emp ~= nil, "Active session exists for employees_saas.csv")
+local session_ascii = super_csv.to_ascii(s_emp, { style = "ascii", max_rows = 5 })
+assert_true(session_ascii ~= nil, "Generated ASCII table from active session")
+assert_true(session_ascii:find("emp_id") ~= nil and session_ascii:find("full_name") ~= nil, "Session ASCII table has headers")
+assert_true(session_ascii:find("EMP%-1001") ~= nil, "Session ASCII table fetched row EMP-1001 via SQLite")
+
+-- 12.7 Test copy_ascii and view_ascii
+local ok_copy, copied_txt = super_csv.copy_ascii({ style = "markdown", max_rows = 3 })
+assert_true(ok_copy == true, "copy_ascii succeeded")
+assert_eq(vim.fn.getreg('"'), copied_txt, "Register contains copied markdown table")
+
+local v_buf, v_win = super_csv.view_ascii({ style = "unicode", max_rows = 4 })
+assert_true(v_buf ~= nil and vim.api.nvim_buf_is_valid(v_buf), "view_ascii created scratch buffer")
+assert_true(v_win ~= nil and vim.api.nvim_win_is_valid(v_win), "view_ascii opened floating window")
+pcall(vim.api.nvim_win_close, v_win, true)
+
+-- 12.8 Test Viewport Border Styles (heavy vs ascii vs single vs rounded)
+assert_eq(cfg.get_border_style(), "heavy", "Default border style is 'heavy'")
+
+-- Switch border style to 'ascii'
+super_csv.set_border_style("ascii")
+assert_eq(cfg.get_border_style(), "ascii", "Border style set to 'ascii'")
+viewport.render(s_emp)
+local lines_ascii = vim.api.nvim_buf_get_lines(s_emp.view_buf, 0, 15, false)
+local has_plus_border = false
+local has_pipe_border = false
+for _, l in ipairs(lines_ascii) do
+  if l:match("^%+%-+") or l:match("%+%-+.*%+$") then
+    has_plus_border = true
+  end
+  if l:match("^|") and l:match("|$") then
+    has_pipe_border = true
+  end
+end
+assert_true(has_plus_border, "Viewport rendered with ASCII '+' and '-' borders")
+assert_true(has_pipe_border, "Viewport rendered with ASCII '|' borders")
+
+-- Toggle border style back to 'heavy'
+local toggled = super_csv.toggle_border_style(s_emp)
+assert_eq(toggled, "heavy", "toggle_border_style toggled 'ascii' -> 'heavy'")
+viewport.render(s_emp)
+local lines_heavy = vim.api.nvim_buf_get_lines(s_emp.view_buf, 0, 15, false)
+local has_heavy_border = false
+for _, l in ipairs(lines_heavy) do
+  if l:match("^┏━") or l:match("━┓$") then
+    has_heavy_border = true
+    break
+  end
+end
+assert_true(has_heavy_border, "Viewport restored to 'heavy' ┏━ borders")
+
+-- Test command dispatchers for style & ascii
+super_csv.command("style ascii")
+assert_eq(cfg.get_border_style(), "ascii", "super_csv.command('style ascii') updated style")
+super_csv.command("toggle_ascii")
+assert_eq(cfg.get_border_style(), "heavy", "super_csv.command('toggle_ascii') restored heavy")
+super_csv.command("copy_ascii markdown 5")
+assert_true(vim.fn.getreg('"'):find("|:---") ~= nil, "super_csv.command('copy_ascii markdown 5') yanked markdown table")
+
 print(string.format("\n=== SuperCsv Tests: %d passed, %d failed ===", passed, failed))
 if failed > 0 then
   vim.cmd("cquit 1")
